@@ -177,6 +177,15 @@ function App() {
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
 
+  // 按 VDOT / 训练目的直接生成课表
+  const [genMode, setGenMode] = useState<'single' | 'week'>('single')
+  const [genVdot, setGenVdot] = useState('46.5')
+  const [genGoal, setGenGoal] = useState<'aerobic' | 'marathon' | 'threshold' | 'speed'>('aerobic')
+  const [genDaysPerWeek, setGenDaysPerWeek] = useState('4')
+  const [genWeeklyKm, setGenWeeklyKm] = useState('30')
+  const [generating, setGenerating] = useState(false)
+  const [generateError, setGenerateError] = useState<string | null>(null)
+
   const savedGarminSession = loadGarminSession()
   const [gDomain, setGDomain] = useState<'garmin.cn' | 'garmin.com'>(savedGarminSession?.domain ?? 'garmin.cn')
   const [gUsername, setGUsername] = useState(savedGarminSession?.username ?? '')
@@ -268,6 +277,40 @@ function App() {
       setParseError(err instanceof Error ? err.message : String(err))
     } finally {
       setParsing(false)
+    }
+  }
+
+  async function handleGenerate() {
+    const vdot = Number(genVdot)
+    if (!Number.isFinite(vdot) || vdot <= 0) {
+      setGenerateError('请输入有效的 VDOT 数值')
+      return
+    }
+    const goalParams =
+      genMode === 'single'
+        ? { mode: 'single' as const, vdot, goal: genGoal }
+        : {
+            mode: 'week' as const,
+            vdot,
+            daysPerWeek: Number(genDaysPerWeek) || 4,
+            weeklyDistanceKm: Number(genWeeklyKm) || 30,
+          }
+    setGenerating(true)
+    setGenerateError(null)
+    setPlan(null)
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goalParams, baseUrl, apiKey: llmApiKey, model }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? '生成失败')
+      setPlan(validatePlan(data.plan))
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -441,7 +484,71 @@ function App() {
       </section>
 
       <section className="card">
-        <h2>第一步 B：导入训练计划 JSON</h2>
+        <h2>第一步 B：按当前跑力（VDOT）自动生成课表</h2>
+        <p className="hint">
+          不想自己写文字描述？告诉 AI 你当前的跑力（VDOT）和训练诉求，由它按 Jack Daniels 训练理论直接生成结构化课表
+          （热身、主体训练、放松，含目标配速 / 心率区间，自动按 Jack Daniels 的 E/M/T/I/R 配速换算）。
+          需要先在上方填好 LLM 接口配置。
+        </p>
+        <label>
+          生成类型
+          <select value={genMode} onChange={(e) => setGenMode(e.target.value as 'single' | 'week')}>
+            <option value="single">单次训练课表</option>
+            <option value="week">一周训练课表</option>
+          </select>
+        </label>
+        <label>
+          当前跑力（VDOT）
+          <input
+            type="number"
+            step="0.1"
+            placeholder="例如 46.5"
+            value={genVdot}
+            onChange={(e) => setGenVdot(e.target.value)}
+          />
+        </label>
+        {genMode === 'single' ? (
+          <label>
+            训练目的
+            <select value={genGoal} onChange={(e) => setGenGoal(e.target.value as typeof genGoal)}>
+              <option value="aerobic">有氧耐力（低强度长距离，心率区间 2 区）</option>
+              <option value="marathon">马拉松配速（模拟比赛强度，对应 VDOT 的 M 配速）</option>
+              <option value="threshold">乳酸阈值（阈值配速间歇，对应 VDOT 的 T 配速）</option>
+              <option value="speed">无氧 / 速度（高强度短间歇，对应 VDOT 的 I/R 配速）</option>
+            </select>
+          </label>
+        ) : (
+          <>
+            <label>
+              每周可训练天数
+              <input
+                type="number"
+                min={1}
+                max={7}
+                value={genDaysPerWeek}
+                onChange={(e) => setGenDaysPerWeek(e.target.value)}
+              />
+            </label>
+            <label>
+              当前每周跑量（公里）
+              <input
+                type="number"
+                min={0}
+                step="1"
+                value={genWeeklyKm}
+                onChange={(e) => setGenWeeklyKm(e.target.value)}
+              />
+            </label>
+          </>
+        )}
+        <button onClick={handleGenerate} disabled={generating || !model.trim() || !baseUrl.trim() || !llmApiKey.trim()}>
+          {generating ? '生成中…' : '生成课表'}
+        </button>
+        {generateError && <p className="error">生成出错：{generateError}</p>}
+      </section>
+
+      <section className="card">
+        <h2>第一步 C：导入训练计划 JSON</h2>
         <p className="hint">
           也可以让 AI 按照下面的结构直接生成 JSON，然后粘贴到下方文本框，或直接选择 JSON 文件导入。
         </p>

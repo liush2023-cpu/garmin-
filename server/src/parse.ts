@@ -48,7 +48,7 @@ export interface LlmConfig {
   model: string;
 }
 
-export async function parsePlanText(planText: string, config: LlmConfig, today: string): Promise<TrainingPlan> {
+async function callLlmForPlan(systemPrompt: string, userMessage: string, config: LlmConfig): Promise<TrainingPlan> {
   const url = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
 
   const res = await fetch(url, {
@@ -60,8 +60,8 @@ export async function parsePlanText(planText: string, config: LlmConfig, today: 
     body: JSON.stringify({
       model: config.model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `今天的日期是 ${today}。请解析以下训练计划文本：\n\n${planText}` },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
       ],
     }),
   });
@@ -81,4 +81,91 @@ export async function parsePlanText(planText: string, config: LlmConfig, today: 
   }
 
   return JSON.parse(jsonMatch[0]) as TrainingPlan;
+}
+
+export async function parsePlanText(planText: string, config: LlmConfig, today: string): Promise<TrainingPlan> {
+  return callLlmForPlan(SYSTEM_PROMPT, `今天的日期是 ${today}。请解析以下训练计划文本：\n\n${planText}`, config);
+}
+
+// --- 按 VDOT / 训练目的直接生成课表 ---------------------------------------
+//
+// 对应"佳明课表生成工具"需求文档里的模块二：用户不必自己写文字描述，
+// 而是给出当前跑力（VDOT）和训练诉求，由 AI 按 Jack Daniels 训练理论
+// 直接产出结构化课表（输出的 JSON 结构与 parsePlanText 完全一致，
+// 因此可以直接复用现有的编辑器、校验、同步、重复组/目标类型转换逻辑）。
+
+const GENERATE_SYSTEM_PROMPT = `你是一名遵循 Jack Daniels《丹尼尔斯跑步方程式》训练理论的跑步教练兼训练计划生成助手。
+用户会给出当前跑力（VDOT）和训练诉求，你需要据此生成结构化训练计划，并仅输出如下 JSON，不要输出任何其他文字、不要使用 markdown 代码块：
+
+{
+  "name": "计划名称",
+  "workouts": [
+    {
+      "date": "YYYY-MM-DD",
+      "title": "训练标题，例如 周二阈值跑",
+      "steps": [
+        {
+          "type": "warmup|interval|recovery|cooldown|easy|rest",
+          "distanceMeters": 1000,
+          "durationSeconds": 600,
+          "targetPace": "5:30/km 或 5:55-6:10/km",
+          "targetHeartRate": "150-160 或 <145，单位 bpm",
+          "repeat": 6,
+          "notes": "备注，如训练目的、强度说明等"
+        }
+      ]
+    }
+  ]
+}
+
+规则：
+- 必须根据用户给出的 VDOT，按 Jack Daniels 训练理论换算出对应强度的训练配速区间（E/M/T/I/R 配速），并填入 targetPace；
+  同时给出与该强度匹配的目标心率区间，填入 targetHeartRate。
+- 每次训练都要包含合理的热身（warmup）和放松（cooldown）步骤，并标注其时长与心率区间（通常为低强度，如 E 配速 / 心率 1-2 区）。
+- 主体训练若包含"N 组 X + 组间 Y 恢复"这类重复结构（如"3 组 × 8 分钟阈值跑，组间 2 分钟慢跑恢复"），
+  请把 X 和 Y 拆成相邻的步骤，并给它们标注同样的 repeat: N（例如 interval 步骤和紧跟着的
+  recovery 步骤都写 "repeat": 3）；不要把它们拆散到 steps 数组的不同位置，也不要展开成
+  N 份重复的独立步骤——程序会根据"相邻且 repeat 相同"自动把它们合并成一个重复组。
+- 每个训练步骤至少包含 distanceMeters 或 durationSeconds 之一。
+- 找不到的字段直接省略，不要编造无意义的内容；但 targetPace / targetHeartRate 必须基于 VDOT 给出，不能省略。
+- 若用户要求生成"一周计划"，需安排训练日和休息日（rest，可以没有 steps），训练日数量应与用户给出的"每周可训练天数"一致，
+  并参考用户给出的"当前周跑量"合理分配每天的训练量，使一周总量与之匹配、循序渐进。
+- 若用户只要求"单次训练课表"，只生成一天（workouts 数组长度为 1）即可，date 使用今天的日期。`;
+
+export type SingleWorkoutGoal = "aerobic" | "marathon" | "threshold" | "speed";
+
+const GOAL_LABELS: Record<SingleWorkoutGoal, string> = {
+  aerobic: "有氧耐力（低强度长距离，对应 E 配速，心率区间 2 区）",
+  marathon: "马拉松配速（模拟比赛强度，对应 VDOT 的 M 配速）",
+  threshold: "乳酸阈值（阈值配速间歇，对应 VDOT 的 T 配速）",
+  speed: "无氧 / 速度（高强度短间歇，对应 VDOT 的 I/R 配速）",
+};
+
+export interface GenerateSingleWorkoutParams {
+  mode: "single";
+  vdot: number;
+  goal: SingleWorkoutGoal;
+}
+
+export interface GenerateWeekPlanParams {
+  mode: "week";
+  vdot: number;
+  daysPerWeek: number;
+  weeklyDistanceKm: number;
+}
+
+export type GeneratePlanParams = GenerateSingleWorkoutParams | GenerateWeekPlanParams;
+
+export async function generatePlan(params: GeneratePlanParams, config: LlmConfig, today: string): Promise<TrainingPlan> {
+  const userMessage =
+    params.mode === "single"
+      ? `今天的日期是 ${today}。我当前的跑力 VDOT 约为 ${params.vdot}。
+请为我生成一份"单次训练课表"，训练目的是：${GOAL_LABELS[params.goal]}。
+日期请填今天（${today}）。`
+      : `今天的日期是 ${today}。我当前的跑力 VDOT 约为 ${params.vdot}，
+每周可训练 ${params.daysPerWeek} 天，目前每周跑量约为 ${params.weeklyDistanceKm} 公里。
+请为我生成一份完整的"一周训练计划"（从今天开始的 7 天），包含训练日和休息日安排，
+每个训练日对应一份具体课表，整体符合 Jack Daniels 训练理论。`;
+
+  return callLlmForPlan(GENERATE_SYSTEM_PROMPT, userMessage, config);
 }

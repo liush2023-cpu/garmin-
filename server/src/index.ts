@@ -3,7 +3,7 @@ import cors from "cors";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { garminLogin, garminRestoreSession, garminExportSession, syncWorkouts, deleteWorkouts, isLoggedIn } from "./garmin.js";
-import { parsePlanText } from "./parse.js";
+import { parsePlanText, generatePlan, type GeneratePlanParams } from "./parse.js";
 import type { GarminSessionTokens } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +26,31 @@ app.post("/api/parse", async (req, res) => {
     }
     const today = new Date().toISOString().slice(0, 10);
     const plan = await parsePlanText(planText, { baseUrl, apiKey, model }, today);
+    res.json({ plan });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post("/api/generate", async (req, res) => {
+  try {
+    const { goalParams, baseUrl, apiKey, model } = req.body as {
+      goalParams?: GeneratePlanParams;
+      baseUrl?: string;
+      apiKey?: string;
+      model?: string;
+    };
+    if (!goalParams || !baseUrl || !apiKey || !model) {
+      return res.status(400).json({ error: "缺少 goalParams / baseUrl / apiKey / model" });
+    }
+    if (goalParams.mode !== "single" && goalParams.mode !== "week") {
+      return res.status(400).json({ error: "goalParams.mode 必须是 single 或 week" });
+    }
+    if (typeof goalParams.vdot !== "number" || !Number.isFinite(goalParams.vdot) || goalParams.vdot <= 0) {
+      return res.status(400).json({ error: "请提供有效的 VDOT 数值" });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const plan = await generatePlan(goalParams, { baseUrl, apiKey, model }, today);
     res.json({ plan });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
