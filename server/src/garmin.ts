@@ -1,5 +1,5 @@
 import pkg from "garmin-connect";
-import type { PlannedWorkout, WorkoutStep } from "./types.js";
+import type { GarminSessionTokens, PlannedWorkout, WorkoutStep } from "./types.js";
 
 const { GarminConnect } = pkg;
 type GarminConnect = InstanceType<typeof GarminConnect>;
@@ -8,11 +8,37 @@ type IWorkoutDetail = Awaited<ReturnType<GarminConnect["addRunningWorkout"]>>;
 
 // One client per process — credentials never leave this machine.
 let client: GarminConnect | null = null;
+let clientDomain: "garmin.com" | "garmin.cn" = "garmin.cn";
 
 export async function garminLogin(username: string, password: string, domain: "garmin.com" | "garmin.cn" = "garmin.cn"): Promise<void> {
   const gc = new GarminConnect({ username, password }, domain);
   await gc.login();
   client = gc;
+  clientDomain = domain;
+}
+
+/**
+ * Restore a previous session from exported OAuth tokens, without sending the
+ * password again. Returns true if the session is valid and usable.
+ */
+export async function garminRestoreSession(tokens: GarminSessionTokens, domain: "garmin.com" | "garmin.cn" = "garmin.cn"): Promise<boolean> {
+  try {
+    const gc = new GarminConnect({ username: "", password: "" }, domain);
+    gc.loadToken(tokens.oauth1, tokens.oauth2);
+    // Cheap call to confirm the restored session actually works.
+    await gc.getUserSettings();
+    client = gc;
+    clientDomain = domain;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Export the current session's OAuth tokens so the client can persist and restore it later. */
+export function garminExportSession(): { tokens: GarminSessionTokens; domain: "garmin.com" | "garmin.cn" } | null {
+  if (!client) return null;
+  return { tokens: client.exportToken(), domain: clientDomain };
 }
 
 export function isLoggedIn(): boolean {

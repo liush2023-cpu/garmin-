@@ -1,13 +1,29 @@
 .page {
-  max-width: 960px;
+  max-width: 1000px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px 24px 64px;
   text-align: left;
 }
 
+.page h1 {
+  font-size: 28px;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, var(--accent), #ff7ab8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.page h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+  color: var(--text-h);
+}
+
 .hint {
-  color: #888;
+  color: var(--text);
   font-size: 14px;
+  line-height: 1.6;
 }
 
 .hint.warn {
@@ -15,19 +31,38 @@
 }
 
 .error {
-  color: #d33;
+  color: #e5484d;
+  font-size: 14px;
+  background: rgba(229, 72, 77, 0.1);
+  border: 1px solid rgba(229, 72, 77, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .card {
-  border: 1px solid #444;
-  border-radius: 8px;
-  padding: 16px;
-  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 24px;
+  margin: 20px 0;
+  background: var(--bg);
+  box-shadow: var(--shadow);
 }
 
 .card label {
   display: block;
-  margin: 12px 0;
+  margin: 14px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
 }
 
 .card input,
@@ -35,72 +70,158 @@
 .card select {
   display: block;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 6px;
   box-sizing: border-box;
   font-family: inherit;
   font-size: 14px;
-  padding: 6px 8px;
+  font-weight: 400;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-h);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.card button {
-  margin-top: 8px;
-  padding: 8px 16px;
+.card input:focus,
+.card textarea:focus,
+.card select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.card input[type='file'] {
+  padding: 8px;
   cursor: pointer;
 }
 
+.card button {
+  margin-top: 12px;
+  padding: 10px 20px;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.card button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.card button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  margin-top: 0;
+}
+
+.card button.ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .schema {
-  background: #1e1e1e;
-  border: 1px solid #444;
-  border-radius: 6px;
-  padding: 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
   overflow-x: auto;
   font-size: 13px;
+  font-family: var(--mono);
+  color: var(--text-h);
 }
 
 .workout {
-  border-top: 1px solid #444;
-  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  padding: 16px 0;
+}
+
+.workout:first-of-type {
+  border-top: none;
+  padding-top: 8px;
 }
 
 .workout-header {
   display: flex;
+  align-items: center;
   gap: 12px;
+  margin-bottom: 8px;
 }
 
 .workout-header input[type='date'] {
   width: auto;
+  margin-top: 0;
+}
+
+.workout-header input[type='text'] {
+  margin-top: 0;
+  font-weight: 600;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 8px;
+  font-size: 13px;
 }
 
 table input,
 table select {
   margin: 0;
   font-size: 13px;
-  padding: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
 }
 
 th,
 td {
-  border: 1px solid #444;
-  padding: 4px;
+  border: 1px solid var(--border);
+  padding: 6px 8px;
   text-align: left;
 }
 
+th {
+  background: var(--social-bg);
+  font-weight: 600;
+  color: var(--text-h);
+  white-space: nowrap;
+}
+
 .results {
-  margin-top: 12px;
+  margin-top: 14px;
   list-style: none;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.results li {
+  padding: 6px 10px;
+  border-radius: 6px;
 }
 
 .results li.ok {
   color: #2a9d2a;
+  background: rgba(42, 157, 42, 0.08);
 }
 
 .results li.fail {
-  color: #d33;
+  color: #e5484d;
+  background: rgba(229, 72, 77, 0.08);
 }

@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import type { TrainingPlan, SyncResult, WorkoutStep, StepType } from './types'
 import './App.css'
 
@@ -12,6 +12,61 @@ const LLM_PRESETS = {
   moonshot: { label: 'Moonshot / Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
   custom: { label: '自定义（OpenAI 兼容接口）', baseUrl: '', model: '' },
 } as const
+
+// 本地持久化：避免每次都要重新填写 LLM 接口配置 / 重新登录 Garmin。
+// 这些信息只保存在浏览器本地（localStorage），不会发送给除你指定的服务之外的任何人。
+const LLM_CONFIG_KEY = 'garmin-trainer:llm-config'
+const GARMIN_SESSION_KEY = 'garmin-trainer:garmin-session'
+
+interface StoredLlmConfig {
+  provider: keyof typeof LLM_PRESETS
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+interface StoredGarminSession {
+  domain: 'garmin.cn' | 'garmin.com'
+  username: string
+  session: unknown
+}
+
+function loadLlmConfig(): StoredLlmConfig | null {
+  try {
+    const raw = localStorage.getItem(LLM_CONFIG_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as StoredLlmConfig
+  } catch {
+    return null
+  }
+}
+
+function saveLlmConfig(config: StoredLlmConfig) {
+  try {
+    localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config))
+  } catch {
+    /* 忽略本地存储失败（如隐私模式） */
+  }
+}
+
+function loadGarminSession(): StoredGarminSession | null {
+  try {
+    const raw = localStorage.getItem(GARMIN_SESSION_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as StoredGarminSession
+  } catch {
+    return null
+  }
+}
+
+function saveGarminSession(session: StoredGarminSession | null) {
+  try {
+    if (session) localStorage.setItem(GARMIN_SESSION_KEY, JSON.stringify(session))
+    else localStorage.removeItem(GARMIN_SESSION_KEY)
+  } catch {
+    /* 忽略本地存储失败 */
+  }
+}
 
 const STEP_TYPES: StepType[] = ['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest']
 
@@ -61,20 +116,63 @@ function App() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const [provider, setProvider] = useState<keyof typeof LLM_PRESETS>('deepseek')
-  const [baseUrl, setBaseUrl] = useState<string>(LLM_PRESETS.deepseek.baseUrl)
-  const [llmApiKey, setLlmApiKey] = useState('')
-  const [model, setModel] = useState<string>(LLM_PRESETS.deepseek.model)
+  const savedLlmConfig = loadLlmConfig()
+  const [provider, setProvider] = useState<keyof typeof LLM_PRESETS>(savedLlmConfig?.provider ?? 'deepseek')
+  const [baseUrl, setBaseUrl] = useState<string>(savedLlmConfig?.baseUrl ?? LLM_PRESETS.deepseek.baseUrl)
+  const [llmApiKey, setLlmApiKey] = useState(savedLlmConfig?.apiKey ?? '')
+  const [model, setModel] = useState<string>(savedLlmConfig?.model ?? LLM_PRESETS.deepseek.model)
   const [planText, setPlanText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
 
-  const [gDomain, setGDomain] = useState<'garmin.cn' | 'garmin.com'>('garmin.cn')
-  const [gUsername, setGUsername] = useState('')
+  const savedGarminSession = loadGarminSession()
+  const [gDomain, setGDomain] = useState<'garmin.cn' | 'garmin.com'>(savedGarminSession?.domain ?? 'garmin.cn')
+  const [gUsername, setGUsername] = useState(savedGarminSession?.username ?? '')
   const [gPassword, setGPassword] = useState('')
   const [loggedIn, setLoggedIn] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
+  const [restoringSession, setRestoringSession] = useState(!!savedGarminSession)
   const [loginError, setLoginError] = useState<string | null>(null)
+
+  // 保存大模型接口配置到本地，下次打开页面自动填入。
+  useEffect(() => {
+    saveLlmConfig({ provider, baseUrl, apiKey: llmApiKey, model })
+  }, [provider, baseUrl, llmApiKey, model])
+
+  // 打开页面时尝试用本地保存的会话令牌自动恢复 Garmin 登录状态，免去重复输入密码。
+  useEffect(() => {
+    const saved = savedGarminSession
+    if (!saved?.session) {
+      setRestoringSession(false)
+      return
+    }
+    let cancelled = false
+    fetch('/api/garmin/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokens: saved.session, domain: saved.domain }),
+    })
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok }) => {
+        if (cancelled) return
+        if (ok) {
+          setLoggedIn(true)
+        } else {
+          saveGarminSession(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) saveGarminSession(null)
+      })
+      .finally(() => {
+        if (!cancelled) setRestoringSession(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // 仅在挂载时运行一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [syncing, setSyncing] = useState(false)
   const [syncResults, setSyncResults] = useState<SyncResult[] | null>(null)
@@ -139,11 +237,21 @@ function App() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '登录失败')
       setLoggedIn(true)
+      if (data.session) {
+        saveGarminSession({ domain: gDomain, username: gUsername, session: data.session })
+      }
+      setGPassword('')
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoggingIn(false)
     }
+  }
+
+  function handleLogout() {
+    setLoggedIn(false)
+    setGPassword('')
+    saveGarminSession(null)
   }
 
   async function handleSync() {
@@ -227,7 +335,7 @@ function App() {
         <h2>第一步 A：自然语言生成课表（AI 解析）</h2>
         <p className="hint">
           直接粘贴自然语言描述的训练计划（含目标配速、目标心率等），由你选择的大模型 API 解析为结构化数据。
-          API Key 仅发送给你选择的模型服务商，不会保存在服务器上。
+          接口地址、API Key、模型名称会保存在你浏览器的本地存储中，下次打开自动填好；它们只会发送给你选择的模型服务商，不会上传到本工具的服务器。
         </p>
         <label>
           模型服务商
@@ -435,7 +543,9 @@ function App() {
             本工具通过非官方接口登录 Garmin Connect（账号密码仅保存在本机内存中，不会上传）。
             该方式依赖 Garmin 网页接口，可能因 Garmin 改版而失效，请谨慎使用。
           </p>
-          {!loggedIn ? (
+          {restoringSession ? (
+            <p className="hint">正在恢复上次的 Garmin 登录状态…</p>
+          ) : !loggedIn ? (
             <>
               <label>
                 账号区域
@@ -459,7 +569,12 @@ function App() {
             </>
           ) : (
             <>
-              <p className="hint">已登录 Garmin（{gUsername}）</p>
+              <div className="row">
+                <p className="hint">已登录 Garmin（{gUsername}），登录状态已保存在本机，下次打开无需重新登录。</p>
+                <button className="ghost" onClick={handleLogout}>
+                  退出登录
+                </button>
+              </div>
               <button onClick={handleSync} disabled={syncing}>
                 {syncing ? '同步中…' : '同步到手表'}
               </button>

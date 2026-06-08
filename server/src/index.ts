@@ -2,8 +2,9 @@ import express from "express";
 import cors from "cors";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { garminLogin, syncWorkouts, deleteWorkouts, isLoggedIn } from "./garmin.js";
+import { garminLogin, garminRestoreSession, garminExportSession, syncWorkouts, deleteWorkouts, isLoggedIn } from "./garmin.js";
 import { parsePlanText } from "./parse.js";
+import type { GarminSessionTokens } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(__dirname, "../../client/dist");
@@ -38,6 +39,23 @@ app.post("/api/garmin/login", async (req, res) => {
       return res.status(400).json({ error: "缺少 username 或 password" });
     }
     await garminLogin(username, password, domain);
+    const session = garminExportSession();
+    res.json({ ok: true, session });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Restore a previous session from tokens saved client-side, so the user
+// doesn't have to re-enter their Garmin password every time.
+app.post("/api/garmin/restore", async (req, res) => {
+  try {
+    const { tokens, domain } = req.body as { tokens?: GarminSessionTokens; domain?: "garmin.com" | "garmin.cn" };
+    if (!tokens?.oauth1 || !tokens?.oauth2) {
+      return res.status(400).json({ error: "缺少 tokens" });
+    }
+    const ok = await garminRestoreSession(tokens, domain ?? "garmin.cn");
+    if (!ok) return res.status(401).json({ error: "会话已过期，请重新登录" });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
