@@ -48,23 +48,84 @@ export interface LlmConfig {
   model: string;
 }
 
+/** LLM 调用超时（毫秒）—— 模型生成可能较慢，给 60 秒 */
+const LLM_TIMEOUT_MS = 60_000;
+
+/**
+ * 从 LLM 返回的文本中提取第一个完整 JSON 对象。
+ * 使用括号匹配算法，比简单的正则 `/\{[\s\S]*\}/` 更健壮——
+ * 后者在文本包含多个 `{}` 或嵌套对象时可能匹配到错误的边界。
+ */
+function extractJsonObject(text: string): string {
+  const start = text.indexOf("{");
+  if (start === -1) throw new Error("解析失败：未能在模型输出中找到 JSON，请检查模型是否支持结构化输出");
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === "\\" && inString) {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+
+  throw new Error("解析失败：JSON 结构不完整（括号未闭合），请检查模型输出");
+}
+
 async function callLlmForPlan(systemPrompt: string, userMessage: string, config: LlmConfig): Promise<TrainingPlan> {
   const url = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`模型接口调用超时（${LLM_TIMEOUT_MS / 1000} 秒），请检查网络或换一个响应更快的模型`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const data = (await res.json()) as OpenAIChatResponse;
 
@@ -75,12 +136,8 @@ async function callLlmForPlan(systemPrompt: string, userMessage: string, config:
   const text = data.choices?.[0]?.message?.content;
   if (!text) throw new Error("解析失败：模型未返回内容");
 
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("解析失败：未能在模型输出中找到 JSON，请检查模型是否支持结构化输出");
-  }
-
-  return JSON.parse(jsonMatch[0]) as TrainingPlan;
+  const jsonStr = extractJsonObject(text);
+  return JSON.parse(jsonStr) as TrainingPlan;
 }
 
 export async function parsePlanText(planText: string, config: LlmConfig, today: string): Promise<TrainingPlan> {
