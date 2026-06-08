@@ -17,6 +17,23 @@ const LLM_PRESETS = {
 // 这些信息只保存在浏览器本地（localStorage），不会发送给除你指定的服务之外的任何人。
 const LLM_CONFIG_KEY = 'garmin-trainer:llm-config'
 const GARMIN_SESSION_KEY = 'garmin-trainer:garmin-session'
+// 记录"计划 → 已同步到 Garmin 的训练"的映射（含 workoutId），
+// 为以后做"实际完成数据 vs 计划"的对比分析预留。撤销同步时会同步移除对应记录。
+const SYNC_LOG_KEY = 'garmin-trainer:sync-log'
+
+/** 一条已同步到 Garmin 的训练记录，用于后续把计划和实际跑步数据关联起来。 */
+interface SyncLogEntry {
+  /** Garmin 上的训练 ID —— 后续拉取实际完成数据时用它做关联键 */
+  workoutId: string
+  /** 计划中的训练日期 YYYY-MM-DD */
+  date: string
+  /** 训练标题 */
+  title: string
+  /** 所属计划名称（便于区分多次导入） */
+  planName?: string
+  /** 同步发生的时间（ISO 字符串），用于排查/排序 */
+  syncedAt: string
+}
 
 interface StoredLlmConfig {
   provider: keyof typeof LLM_PRESETS
@@ -66,6 +83,41 @@ function saveGarminSession(session: StoredGarminSession | null) {
   } catch {
     /* 忽略本地存储失败 */
   }
+}
+
+function loadSyncLog(): SyncLogEntry[] {
+  try {
+    const raw = localStorage.getItem(SYNC_LOG_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as SyncLogEntry[]) : []
+  } catch {
+    return []
+  }
+}
+
+function saveSyncLog(entries: SyncLogEntry[]) {
+  try {
+    localStorage.setItem(SYNC_LOG_KEY, JSON.stringify(entries))
+  } catch {
+    /* 忽略本地存储失败 */
+  }
+}
+
+/** 同步成功后追加记录（按 workoutId 去重，避免重复同步产生多条）。 */
+function appendSyncLog(newEntries: SyncLogEntry[]) {
+  if (newEntries.length === 0) return
+  const existing = loadSyncLog()
+  const byId = new Map(existing.map((e) => [e.workoutId, e]))
+  for (const entry of newEntries) byId.set(entry.workoutId, entry)
+  saveSyncLog([...byId.values()])
+}
+
+/** 撤销同步后移除对应记录，避免日志里残留指向已删除训练的死链接。 */
+function removeFromSyncLog(workoutIds: string[]) {
+  if (workoutIds.length === 0) return
+  const ids = new Set(workoutIds)
+  saveSyncLog(loadSyncLog().filter((e) => !ids.has(e.workoutId)))
 }
 
 const STEP_TYPES: StepType[] = ['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest']
@@ -269,7 +321,15 @@ function App() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '同步失败')
-      setSyncResults(data.results)
+      const results = data.results as SyncResult[]
+      setSyncResults(results)
+      // 记录 workoutId ↔ 计划日期/标题的映射，方便以后把实际跑步数据和计划对应起来。
+      const syncedAt = new Date().toISOString()
+      appendSyncLog(
+        results
+          .filter((r): r is SyncResult & { workoutId: string } => r.ok && !!r.workoutId)
+          .map((r) => ({ workoutId: r.workoutId, date: r.date, title: r.title, planName: plan.name, syncedAt })),
+      )
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -298,6 +358,7 @@ function App() {
         setUndoError(`${failed.length} 条删除失败：${failed.map((f) => f.error).join('; ')}`)
       } else {
         setUndoMessage(`已删除本次同步创建的 ${results.length} 条训练`)
+        removeFromSyncLog(results.map((r) => r.workoutId))
         setSyncResults(null)
       }
     } catch (err) {

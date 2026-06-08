@@ -1,0 +1,63 @@
+{
+  "week_plan": {
+    "target_weekly_km": "35-42",
+    "goal": "恢复后逐步提升训练质量，夏季以心率控制为主",
+    "days": [
+      {
+        "day": "周一",
+        "type": "恢复跑",
+        "distance_km": 6,
+        "pace": "6:10-6:40/km",
+        "heart_rate": "<145"
+      },
+      {
+        "day": "周二",
+        "type": "阈值训练",
+        "total_km": 10,
+        "warmup_km": 3,
+        "main_set": "3×8分钟阈值跑，组间慢跑2分钟",
+        "heart_rate": "168-174",
+        "pace_reference": "4:55-5:15/km（仅参考）"
+      },
+      {
+        "day": "周三",
+        "type": "力量训练",
+        "duration_min": 40,
+        "focus": [
+          "保加利亚分腿蹲",
+          "罗马尼亚硬拉",
+          "臀中肌激活",
+          "核心稳定"
+        ]
+      },
+      {
+        "day": "周四",
+        "type": "有氧跑",
+        "distance_km": 8,
+        "heart_rate": "135-145"
+      },
+      {
+        "day": "周五",
+        "type": "休息",
+        "optional": [
+          "快走30分钟",
+          "拉伸15分钟"
+        ]
+      },
+      {
+        "day": "周六",
+        "type": "恢复跑",
+        "distance_km": 5,
+        "heart_rate": "130-140"
+      },
+      {
+        "day": "周日",
+        "type": "长距离跑",
+        "distance_km": "16-18",
+        "first_12km_pace": "5:55-6:10/km",
+        "last_4_6km_pace": "5:20-5:40/km",
+        "heart_rate": "135-150"
+      }
+    ]
+  }
+}

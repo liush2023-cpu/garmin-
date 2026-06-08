@@ -1,0 +1,58 @@
+{
+  "name": "恢复期周计划（35-42公里，心率控制为主）",
+  "workouts": [
+    {
+      "date": "2026-06-08",
+      "title": "周一：恢复跑 6公里",
+      "steps": [
+        { "type": "easy", "distanceMeters": 6000, "targetPace": "6:10-6:40/km", "notes": "心率 <145，注意控制节奏" }
+      ]
+    },
+    {
+      "date": "2026-06-09",
+      "title": "周二：阈值训练 10公里",
+      "steps": [
+        { "type": "warmup", "distanceMeters": 3000, "targetPace": "6:00/km", "notes": "热身慢跑 3 公里" },
+        { "type": "interval", "durationSeconds": 480, "repeat": 3, "targetPace": "4:55-5:15/km", "notes": "3组 × 8分钟阈值跑，心率 168-174" },
+        { "type": "recovery", "durationSeconds": 120, "repeat": 3, "notes": "组间慢跑 2 分钟恢复" },
+        { "type": "cooldown", "distanceMeters": 1000, "targetPace": "6:00/km", "notes": "放松慢跑" }
+      ]
+    },
+    {
+      "date": "2026-06-10",
+      "title": "周三：力量训练 40分钟",
+      "steps": [
+        { "type": "easy", "durationSeconds": 2400, "notes": "保加利亚分腿蹲 / 罗马尼亚硬拉 / 臀中肌激活 / 核心稳定" }
+      ]
+    },
+    {
+      "date": "2026-06-11",
+      "title": "周四：有氧跑 8公里",
+      "steps": [
+        { "type": "easy", "distanceMeters": 8000, "notes": "心率 135-145" }
+      ]
+    },
+    {
+      "date": "2026-06-12",
+      "title": "周五：休息（可选快走/拉伸）",
+      "steps": [
+        { "type": "rest", "durationSeconds": 1800, "notes": "可选：快走 30 分钟 或 拉伸 15 分钟" }
+      ]
+    },
+    {
+      "date": "2026-06-13",
+      "title": "周六：恢复跑 5公里",
+      "steps": [
+        { "type": "easy", "distanceMeters": 5000, "notes": "轻松恢复跑，心率 130-140" }
+      ]
+    },
+    {
+      "date": "2026-06-14",
+      "title": "周日：长距离跑 16-18公里",
+      "steps": [
+        { "type": "easy", "distanceMeters": 12000, "targetPace": "5:55-6:10/km", "notes": "前 12 公里，心率 135-150" },
+        { "type": "interval", "distanceMeters": 5000, "targetPace": "5:20-5:40/km", "notes": "后 4-6 公里提速，心率 135-150" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "name": "一周跑步训练计划示例",
+  "workouts": [
+    {
+      "date": "2026-06-08",
+      "title": "周一：休息日",
+      "steps": []
+    },
+    {
+      "date": "2026-06-09",
+      "title": "周二：5公里轻松跑",
+      "steps": [
+        { "type": "warmup", "distanceMeters": 800, "targetPace": "6:30/km", "notes": "热身慢跑" },
+        { "type": "easy", "distanceMeters": 5000, "targetPace": "6:00/km", "notes": "保持轻松呼吸节奏" },
+        { "type": "cooldown", "distanceMeters": 800, "targetPace": "6:30/km", "notes": "放松慢跑+拉伸" }
+      ]
+    },
+    {
+      "date": "2026-06-10",
+      "title": "周三：核心力量训练",
+      "steps": [
+        { "type": "easy", "durationSeconds": 1800, "notes": "核心+下肢力量训练 30 分钟（自重训练）" }
+      ]
+    },
+    {
+      "date": "2026-06-11",
+      "title": "周四：间歇跑 6x800米",
+      "steps": [
+        { "type": "warmup", "distanceMeters": 1500, "targetPace": "6:00/km", "notes": "热身慢跑" },
+        { "type": "interval", "distanceMeters": 800, "repeat": 6, "targetPace": "4:30/km", "notes": "6 组 800 米间歇" },
+        { "type": "recovery", "distanceMeters": 400, "repeat": 6, "targetPace": "6:30/km", "notes": "组间 400 米慢跑恢复" },
+        { "type": "cooldown", "distanceMeters": 1000, "targetPace": "6:00/km", "notes": "放松慢跑" }
+      ]
+    },
+    {
+      "date": "2026-06-12",
+      "title": "周五：休息日",
+      "steps": []
+    },
+    {
+      "date": "2026-06-13",
+      "title": "周六：节奏跑 8公里",
+      "steps": [
+        { "type": "warmup", "distanceMeters": 1000, "targetPace": "6:00/km", "notes": "热身慢跑" },
+        { "type": "interval", "distanceMeters": 8000, "targetPace": "5:15/km", "notes": "节奏跑，保持稳定配速" },
+        { "type": "cooldown", "distanceMeters": 1000, "targetPace": "6:30/km", "notes": "放松慢跑" }
+      ]
+    },
+    {
+      "date": "2026-06-14",
+      "title": "周日：长距离慢跑 14公里",
+      "steps": [
+        { "type": "warmup", "distanceMeters": 1000, "targetPace": "6:15/km", "notes": "热身慢跑" },
+        { "type": "easy", "distanceMeters": 12000, "targetPace": "6:00/km", "notes": "LSD 长距离慢跑，注意补水" },
+        { "type": "cooldown", "distanceMeters": 1000, "targetPace": "6:30/km", "notes": "放松慢跑+拉伸" }
+      ]
+    }
+  ]
+}
