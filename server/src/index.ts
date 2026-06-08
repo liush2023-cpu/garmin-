@@ -3,8 +3,16 @@ import cors from "cors";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { garminLogin, garminRestoreSession, garminExportSession, syncWorkouts, deleteWorkouts, isLoggedIn } from "./garmin.js";
-import { parsePlanText, generatePlan, type GeneratePlanParams } from "./parse.js";
-import type { GarminSessionTokens } from "./types.js";
+import { parsePlanText, generatePlan } from "./parse.js";
+import { loginLimiter, apiLimiter } from "./rate-limit.js";
+import {
+  validateParseBody,
+  validateGenerateBody,
+  validateLoginBody,
+  validateRestoreBody,
+  validateSyncBody,
+  validateDeleteBody,
+} from "./validate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(__dirname, "../../client/dist");
@@ -13,57 +21,39 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
-app.post("/api/parse", async (req, res) => {
+// ── LLM 相关 ────────────────────────────────────────────────────────────────
+
+app.post("/api/parse", apiLimiter, async (req, res) => {
+  const v = validateParseBody(req.body);
+  if (!v.ok) return res.status(v.status).json({ error: v.error });
   try {
-    const { planText, baseUrl, apiKey, model } = req.body as {
-      planText?: string;
-      baseUrl?: string;
-      apiKey?: string;
-      model?: string;
-    };
-    if (!planText || !baseUrl || !apiKey || !model) {
-      return res.status(400).json({ error: "缺少 planText / baseUrl / apiKey / model" });
-    }
     const today = new Date().toISOString().slice(0, 10);
-    const plan = await parsePlanText(planText, { baseUrl, apiKey, model }, today);
+    const plan = await parsePlanText(v.data.planText, v.data, today);
     res.json({ plan });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-app.post("/api/generate", async (req, res) => {
+app.post("/api/generate", apiLimiter, async (req, res) => {
+  const v = validateGenerateBody(req.body);
+  if (!v.ok) return res.status(v.status).json({ error: v.error });
   try {
-    const { goalParams, baseUrl, apiKey, model } = req.body as {
-      goalParams?: GeneratePlanParams;
-      baseUrl?: string;
-      apiKey?: string;
-      model?: string;
-    };
-    if (!goalParams || !baseUrl || !apiKey || !model) {
-      return res.status(400).json({ error: "缺少 goalParams / baseUrl / apiKey / model" });
-    }
-    if (goalParams.mode !== "single" && goalParams.mode !== "week") {
-      return res.status(400).json({ error: "goalParams.mode 必须是 single 或 week" });
-    }
-    if (typeof goalParams.vdot !== "number" || !Number.isFinite(goalParams.vdot) || goalParams.vdot <= 0) {
-      return res.status(400).json({ error: "请提供有效的 VDOT 数值" });
-    }
     const today = new Date().toISOString().slice(0, 10);
-    const plan = await generatePlan(goalParams, { baseUrl, apiKey, model }, today);
+    const plan = await generatePlan(v.data.goalParams, v.data, today);
     res.json({ plan });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-app.post("/api/garmin/login", async (req, res) => {
+// ── Garmin 认证 ──────────────────────────────────────────────────────────────
+
+app.post("/api/garmin/login", loginLimiter, async (req, res) => {
+  const v = validateLoginBody(req.body);
+  if (!v.ok) return res.status(v.status).json({ error: v.error });
   try {
-    const { username, password, domain } = req.body as { username?: string; password?: string; domain?: "garmin.com" | "garmin.cn" };
-    if (!username || !password) {
-      return res.status(400).json({ error: "缺少 username 或 password" });
-    }
-    await garminLogin(username, password, domain);
+    await garminLogin(v.data.username, v.data.password, v.data.domain);
     const session = garminExportSession();
     res.json({ ok: true, session });
   } catch (err) {
@@ -74,12 +64,13 @@ app.post("/api/garmin/login", async (req, res) => {
 // Restore a previous session from tokens saved client-side, so the user
 // doesn't have to re-enter their Garmin password every time.
 app.post("/api/garmin/restore", async (req, res) => {
+  const v = validateRestoreBody(req.body);
+  if (!v.ok) return res.status(v.status).json({ error: v.error });
   try {
-    const { tokens, domain } = req.body as { tokens?: GarminSessionTokens; domain?: "garmin.com" | "garmin.cn" };
-    if (!tokens?.oauth1 || !tokens?.oauth2) {
-      return res.status(400).json({ error: "缺少 tokens" });
-    }
-    const ok = await garminRestoreSession(tokens, domain ?? "garmin.cn");
+    const ok = await garminRestoreSession(
+      v.data.tokens as unknown as Parameters<typeof garminRestoreSession>[0],
+      v.data.domain,
+    );
     if (!ok) return res.status(401).json({ error: "会话已过期，请重新登录" });
     res.json({ ok: true });
   } catch (err) {
@@ -91,16 +82,14 @@ app.get("/api/garmin/status", (_req, res) => {
   res.json({ loggedIn: isLoggedIn() });
 });
 
+// ── Garmin 同步 / 撤销 ──────────────────────────────────────────────────────
+
 app.post("/api/sync", async (req, res) => {
+  const v = validateSyncBody(req.body);
+  if (!v.ok) return res.status(v.status).json({ error: v.error });
+  if (!isLoggedIn()) return res.status(401).json({ error: "请先登录 Garmin 账号" });
   try {
-    const { plan } = req.body as { plan?: { workouts: Parameters<typeof syncWorkouts>[0] } };
-    if (!plan?.workouts) {
-      return res.status(400).json({ error: "缺少训练计划数据" });
-    }
-    if (!isLoggedIn()) {
-      return res.status(401).json({ error: "请先登录 Garmin 账号" });
-    }
-    const results = await syncWorkouts(plan.workouts);
+    const results = await syncWorkouts(v.data.workouts as Parameters<typeof syncWorkouts>[0]);
     res.json({ results });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -108,20 +97,18 @@ app.post("/api/sync", async (req, res) => {
 });
 
 app.post("/api/garmin/delete-workouts", async (req, res) => {
+  const v = validateDeleteBody(req.body);
+  if (!v.ok) return res.status(v.status).json({ error: v.error });
+  if (!isLoggedIn()) return res.status(401).json({ error: "请先登录 Garmin 账号" });
   try {
-    const { workoutIds } = req.body as { workoutIds?: string[] };
-    if (!Array.isArray(workoutIds) || workoutIds.length === 0) {
-      return res.status(400).json({ error: "缺少 workoutIds" });
-    }
-    if (!isLoggedIn()) {
-      return res.status(401).json({ error: "请先登录 Garmin 账号" });
-    }
-    const results = await deleteWorkouts(workoutIds);
+    const results = await deleteWorkouts(v.data.workoutIds);
     res.json({ results });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// ── 静态文件托管 ─────────────────────────────────────────────────────────────
 
 // Serve the built frontend in production (single-service deployment).
 app.use(express.static(clientDist));
