@@ -1,5 +1,8 @@
-import { GarminConnect } from "garmin-connect";
+import pkg from "garmin-connect";
 import type { PlannedWorkout, WorkoutStep } from "./types.js";
+
+const { GarminConnect } = pkg;
+type GarminConnect = InstanceType<typeof GarminConnect>;
 
 type IWorkoutDetail = Awaited<ReturnType<GarminConnect["addRunningWorkout"]>>;
 
