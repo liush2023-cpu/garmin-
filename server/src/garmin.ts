@@ -54,7 +54,74 @@ const STEP_TYPE_MAP: Record<WorkoutStep["type"], { stepTypeId: number; stepTypeK
   rest: { stepTypeId: 5, stepTypeKey: "rest" },
 };
 
-function buildStepDTO(step: WorkoutStep, stepOrder: number) {
+// --- 配速 / 心率目标解析 -------------------------------------------------
+//
+// Garmin 用结构化的 targetType + targetValueOne/Two 来表示"目标配速区间"
+// （pace.zone，单位 米/秒）和"目标心率区间"（heart.rate.zone，单位 bpm），
+// 而不是靠备注文字。下面两个函数把我们模型里自由格式的字符串换算成这种结构。
+//
+// 配速越快，数值（分钟/公里）越小，对应的 米/秒 越大；Garmin 把"较慢的一端"
+// 放 targetValueOne、"较快的一端"放 targetValueTwo（即 One <= Two）。
+
+const PACE_PATTERN = /(\d{1,2}):(\d{2})/g;
+
+function paceToMetersPerSecond(minutes: number, seconds: number): number {
+  const secondsPerKm = minutes * 60 + seconds;
+  if (secondsPerKm <= 0) return 0;
+  return 1000 / secondsPerKm;
+}
+
+/** 解析 "4:45/km"、"4:40-4:50/km"、"<5:00/km"、"4:45" 等写法为 [慢, 快] 的 m/s 区间。 */
+export function parsePaceRangeToMps(pace: string): [number, number] | null {
+  const matches = [...pace.matchAll(PACE_PATTERN)].map(([, m, s]) => paceToMetersPerSecond(Number(m), Number(s)));
+  if (matches.length === 0) return null;
+  if (matches.length === 1) {
+    // 单一配速：给一个小的容差区间，避免 Garmin 因区间过窄报错。
+    const v = matches[0];
+    const tolerance = v * 0.03;
+    return [v - tolerance, v + tolerance];
+  }
+  const lo = Math.min(...matches);
+  const hi = Math.max(...matches);
+  return [lo, hi];
+}
+
+const HR_PATTERN = /\d{2,3}/g;
+
+/** 解析 "165-170"、"<145"、">160"、"150" 等写法为 [低, 高] 的 bpm 区间。 */
+export function parseHeartRateRangeToBpm(hr: string): [number, number] | null {
+  const numbers = (hr.match(HR_PATTERN) ?? []).map(Number);
+  if (numbers.length === 0) return null;
+  if (numbers.length === 1) {
+    const v = numbers[0];
+    if (hr.includes("<")) return [Math.max(0, v - 30), v];
+    if (hr.includes(">")) return [v, v + 30];
+    return [Math.max(0, v - 5), v + 5];
+  }
+  const lo = Math.min(...numbers);
+  const hi = Math.max(...numbers);
+  return [lo, hi];
+}
+
+const PACE_TARGET_TYPE = { workoutTargetTypeId: 6, workoutTargetTypeKey: "pace.zone" };
+const HEART_RATE_TARGET_TYPE = { workoutTargetTypeId: 4, workoutTargetTypeKey: "heart.rate.zone" };
+const NO_TARGET_TYPE = { workoutTargetTypeId: 1, workoutTargetTypeKey: "no.target" };
+
+function resolveTarget(step: WorkoutStep): { targetType: typeof NO_TARGET_TYPE; targetValueOne: number | null; targetValueTwo: number | null } {
+  if (step.targetPace) {
+    const range = parsePaceRangeToMps(step.targetPace);
+    if (range) return { targetType: PACE_TARGET_TYPE, targetValueOne: range[0], targetValueTwo: range[1] };
+  }
+  if (step.targetHeartRate) {
+    const range = parseHeartRateRangeToBpm(step.targetHeartRate);
+    if (range) return { targetType: HEART_RATE_TARGET_TYPE, targetValueOne: range[0], targetValueTwo: range[1] };
+  }
+  return { targetType: NO_TARGET_TYPE, targetValueOne: null, targetValueTwo: null };
+}
+
+// --- DTO 构建 -------------------------------------------------------------
+
+function buildStepDTO(step: WorkoutStep, stepOrder: number, childStepId: number | null = null) {
   const useDistance = step.distanceMeters != null;
   const targetBits = [
     step.targetPace ? `配速 ${step.targetPace}` : null,
@@ -63,11 +130,12 @@ function buildStepDTO(step: WorkoutStep, stepOrder: number) {
   const description = [step.notes, targetBits.length ? `目标：${targetBits.join("，")}` : null]
     .filter(Boolean)
     .join(" | ") || null;
+  const { targetType, targetValueOne, targetValueTwo } = resolveTarget(step);
   return {
     type: "ExecutableStepDTO",
     stepId: null,
     stepOrder,
-    childStepId: null,
+    childStepId,
     description,
     stepType: { stepTypeId: STEP_TYPE_MAP[step.type].stepTypeId, stepTypeKey: STEP_TYPE_MAP[step.type].stepTypeKey },
     endCondition: useDistance
@@ -77,12 +145,68 @@ function buildStepDTO(step: WorkoutStep, stepOrder: number) {
     endConditionValue: useDistance ? step.distanceMeters : step.durationSeconds,
     endConditionCompare: null,
     endConditionZone: null,
-    targetType: { workoutTargetTypeId: 1, workoutTargetTypeKey: "no.target" },
-    targetValueOne: null,
-    targetValueTwo: null,
+    targetType,
+    targetValueOne,
+    targetValueTwo,
     zoneNumber: null,
     description2: step.targetPace ?? null,
   };
+}
+
+/**
+ * 把"组间恢复重复 N 次"这类结构打包成 Garmin 的 RepeatGroupDTO：
+ * 把相邻且 repeat 值相同（>1）的若干步骤识别为一组，输出为一个会在 Garmin
+ * App 里显示成"N 次"的重复块；其余步骤按原样输出为平铺的 ExecutableStepDTO。
+ */
+function buildWorkoutSteps(steps: WorkoutStep[]) {
+  const result: unknown[] = [];
+  let stepOrder = 1;
+  let groupId = 1000; // 与普通 stepId（null）区分开的分组 id 起始值
+
+  let i = 0;
+  while (i < steps.length) {
+    const step = steps[i];
+    const repeat = step.repeat && step.repeat > 1 ? step.repeat : null;
+
+    if (repeat == null) {
+      result.push(buildStepDTO(step, stepOrder));
+      stepOrder += 1;
+      i += 1;
+      continue;
+    }
+
+    // 收集相邻且 repeat 值相同的步骤组成一个重复块
+    let j = i;
+    while (j < steps.length && steps[j].repeat === repeat) j += 1;
+    const group = steps.slice(i, j);
+    const currentGroupId = groupId;
+    groupId += 1;
+
+    result.push({
+      type: "RepeatGroupDTO",
+      stepId: null,
+      stepOrder,
+      childStepId: currentGroupId,
+      description: null,
+      stepType: { stepTypeId: 6, stepTypeKey: "repeat" },
+      numberOfIterations: repeat,
+      smartRepeat: false,
+      endCondition: { conditionTypeId: 7, conditionTypeKey: "iterations" },
+      endConditionValue: repeat,
+      preferredEndConditionUnit: null,
+      endConditionCompare: null,
+      endConditionZone: null,
+      targetType: NO_TARGET_TYPE,
+      targetValueOne: null,
+      targetValueTwo: null,
+      zoneNumber: null,
+      workoutSteps: group.map((s, idx) => buildStepDTO(s, idx + 1, currentGroupId)),
+    });
+    stepOrder += 1;
+    i = j;
+  }
+
+  return result;
 }
 
 function buildWorkoutDTO(workout: PlannedWorkout): IWorkoutDetail {
@@ -96,7 +220,7 @@ function buildWorkoutDTO(workout: PlannedWorkout): IWorkoutDetail {
       {
         segmentOrder: 1,
         sportType,
-        workoutSteps: workout.steps.map((s, i) => buildStepDTO(s, i + 1)),
+        workoutSteps: buildWorkoutSteps(workout.steps),
       },
     ],
   } as unknown as IWorkoutDetail;

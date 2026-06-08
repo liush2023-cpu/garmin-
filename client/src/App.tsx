@@ -402,6 +402,8 @@ function App() {
         <p className="hint">
           type 取值：warmup（热身）/ interval（间歇）/ recovery（恢复）/ cooldown（放松）/ easy（轻松跑）/ rest（休息日）。
           每个训练步骤需包含 distanceMeters（米）或 durationSeconds（秒）之一。
+          相邻且 repeat 数值相同的步骤（例如"间歇 + 组间恢复"各标 repeat: 3）会被自动打包成 Garmin 里的"重复组"，
+          显示为"3 次"，而不是同步成三段重复的独立步骤。
         </p>
         <label>
           从文件导入
