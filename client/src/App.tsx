@@ -8,14 +8,18 @@ import { PlanParser } from './components/PlanParser'
 import { PlanImporter } from './components/PlanImporter'
 import { PlanPreview } from './components/PlanPreview'
 import { GarminSync } from './components/GarminSync'
+import { HealthDashboard } from './components/HealthDashboard'
 import type { TrainingPlan, SyncResult } from './types'
 import './App.css'
+
+type Tab = 'plan' | 'health'
 
 function App() {
   const llm = useLlmConfig()
   const garmin = useGarminSession()
   const syncLog = useSyncLog()
 
+  const [tab, setTab] = useState<Tab>('plan')
   const [showSettings, setShowSettings] = useState(!llm.isConfigured)
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
 
@@ -44,6 +48,22 @@ function App() {
         </button>
       </div>
 
+      {/* 标签切换 */}
+      <div className="row" style={{ gap: 8, marginBottom: 0 }}>
+        <button
+          className={tab === 'plan' ? '' : 'ghost'}
+          onClick={() => setTab('plan')}
+        >
+          训练计划
+        </button>
+        <button
+          className={tab === 'health' ? '' : 'ghost'}
+          onClick={() => setTab('health')}
+        >
+          健康看板
+        </button>
+      </div>
+
       {showSettings && (
         <SettingsPanel
           provider={llm.provider}
@@ -58,33 +78,41 @@ function App() {
         />
       )}
 
-      <PlanGenerator isConfigured={llm.isConfigured} llmConfig={llmConfig} onPlanReady={setPlan} />
+      {tab === 'plan' && (
+        <>
+          <PlanGenerator isConfigured={llm.isConfigured} llmConfig={llmConfig} onPlanReady={setPlan} />
 
-      <PlanParser isConfigured={llm.isConfigured} llmConfig={llmConfig} onPlanReady={setPlan} />
+          <PlanParser isConfigured={llm.isConfigured} llmConfig={llmConfig} onPlanReady={setPlan} />
 
-      <PlanImporter onPlanReady={setPlan} />
+          <PlanImporter onPlanReady={setPlan} />
 
-      {plan && <PlanPreview plan={plan} />}
+          {plan && <PlanPreview plan={plan} />}
 
-      {plan && (
-        <GarminSync
-          plan={plan}
-          domain={garmin.domain}
-          username={garmin.username}
-          password={garmin.password}
-          loggedIn={garmin.loggedIn}
-          loggingIn={garmin.loggingIn}
-          restoringSession={garmin.restoringSession}
-          loginError={garmin.loginError}
-          onDomainChange={garmin.setDomain}
-          onUsernameChange={garmin.setUsername}
-          onPasswordChange={garmin.setPassword}
-          onLoginErrorClear={() => garmin.setLoginError(null)}
-          onLogin={garmin.login}
-          onLogout={garmin.logout}
-          onSyncComplete={handleSyncComplete}
-          onUndoComplete={handleUndoComplete}
-        />
+          {plan && (
+            <GarminSync
+              plan={plan}
+              domain={garmin.domain}
+              username={garmin.username}
+              password={garmin.password}
+              loggedIn={garmin.loggedIn}
+              loggingIn={garmin.loggingIn}
+              restoringSession={garmin.restoringSession}
+              loginError={garmin.loginError}
+              onDomainChange={garmin.setDomain}
+              onUsernameChange={garmin.setUsername}
+              onPasswordChange={garmin.setPassword}
+              onLoginErrorClear={() => garmin.setLoginError(null)}
+              onLogin={garmin.login}
+              onLogout={garmin.logout}
+              onSyncComplete={handleSyncComplete}
+              onUndoComplete={handleUndoComplete}
+            />
+          )}
+        </>
+      )}
+
+      {tab === 'health' && (
+        <HealthDashboard llmConfig={llmConfig} />
       )}
     </div>
   )

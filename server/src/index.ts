@@ -13,6 +13,7 @@ import {
   validateSyncBody,
   validateDeleteBody,
 } from "./validate.js";
+import healthRouter from "./health-routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(__dirname, "../../client/dist");
@@ -46,6 +47,10 @@ app.post("/api/generate", apiLimiter, async (req, res) => {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// ── 健康数据分析 ──────────────────────────────────────────────────────────────
+
+app.use("/api/health", healthRouter);
 
 // ── Garmin 认证 ──────────────────────────────────────────────────────────────
 

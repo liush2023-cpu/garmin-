@@ -45,6 +45,11 @@ export function isLoggedIn(): boolean {
   return client !== null;
 }
 
+/** 获取当前 GarminConnect 客户端实例（未登录时返回 null） */
+export function getClient(): GarminConnect | null {
+  return client;
+}
+
 const STEP_TYPE_MAP: Record<WorkoutStep["type"], { stepTypeId: number; stepTypeKey: string }> = {
   warmup: { stepTypeId: 1, stepTypeKey: "warmup" },
   interval: { stepTypeId: 3, stepTypeKey: "interval" },
