@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
-import type { TrainingPlan, SyncResult, WorkoutStep, StepType } from './types'
+import type { TrainingPlan, PlannedWorkout, SyncResult, StepType } from './types'
 import './App.css'
 
 const LLM_PRESETS = {
@@ -156,8 +156,6 @@ const RACE_PRESETS = {
   custom: { label: '自定义距离', meters: 0 },
 } as const
 
-const STEP_TYPES: StepType[] = ['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest']
-
 const VALID_STEP_TYPES = new Set<StepType>(['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest'])
 
 function validatePlan(data: unknown): TrainingPlan {
@@ -189,17 +187,34 @@ function validatePlan(data: unknown): TrainingPlan {
   return data as TrainingPlan
 }
 
-function stepSummary(step: WorkoutStep): string {
-  const parts: string[] = [step.type]
-  if (step.distanceMeters != null) parts.push(`${step.distanceMeters} 米`)
-  if (step.durationSeconds != null) parts.push(`${step.durationSeconds} 秒`)
-  if (step.targetPace) parts.push(`配速 ${step.targetPace}`)
-  if (step.targetHeartRate) parts.push(`心率 ${step.targetHeartRate}`)
-  if (step.repeat) parts.push(`x${step.repeat}`)
-  return parts.join(' / ')
+/** 汇总一次训练的预估总时长（秒）/ 总距离（米）/ 步骤数，供只读摘要卡片展示。 */
+function workoutTotals(workout: PlannedWorkout): { totalDurationSeconds: number; totalDistanceMeters: number; stepCount: number } {
+  let totalDurationSeconds = 0
+  let totalDistanceMeters = 0
+  for (const step of workout.steps) {
+    const mult = step.repeat && step.repeat > 1 ? step.repeat : 1
+    if (step.durationSeconds != null) totalDurationSeconds += step.durationSeconds * mult
+    if (step.distanceMeters != null) totalDistanceMeters += step.distanceMeters * mult
+  }
+  return { totalDurationSeconds, totalDistanceMeters, stepCount: workout.steps.length }
+}
+
+function formatDuration(totalSeconds: number): string {
+  if (totalSeconds <= 0) return '—'
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.round((totalSeconds % 3600) / 60)
+  return h > 0 ? `约 ${h} 小时 ${m} 分钟` : `约 ${m} 分钟`
+}
+
+function formatDistance(totalMeters: number): string {
+  if (totalMeters <= 0) return '—'
+  return `约 ${(totalMeters / 1000).toFixed(1)} 公里`
 }
 
 function App() {
+  const savedLlmConfigInit = loadLlmConfig()
+  const [showSettings, setShowSettings] = useState(!savedLlmConfigInit?.apiKey)
+  const [showGarminForm, setShowGarminForm] = useState(false)
   const [planJsonText, setPlanJsonText] = useState('')
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -479,84 +494,65 @@ function App() {
     }
   }
 
-  function updateStep(workoutIdx: number, stepIdx: number, patch: Partial<WorkoutStep>) {
-    if (!plan) return
-    const workouts = plan.workouts.map((w, wi) => {
-      if (wi !== workoutIdx) return w
-      const steps = w.steps.map((s, si) => (si === stepIdx ? { ...s, ...patch } : s))
-      return { ...w, steps }
-    })
-    setPlan({ ...plan, workouts })
-  }
-
-  function updateWorkout(workoutIdx: number, patch: { date?: string; title?: string }) {
-    if (!plan) return
-    const workouts = plan.workouts.map((w, wi) => (wi === workoutIdx ? { ...w, ...patch } : w))
-    setPlan({ ...plan, workouts })
-  }
-
   return (
     <div className="page">
-      <h1>Garmin AI 训练计划导入工具</h1>
-      <p className="hint">
-        粘贴 AI 生成的跑步训练计划文本，解析为结构化训练后预览/编辑，再同步到你的 Garmin Connect 账号。
-        所有数据仅在本地处理，不会上传到任何第三方服务器。
-      </p>
-
-      <section className="card">
-        <h2>第一步 A：自然语言生成课表（AI 解析）</h2>
-        <p className="hint">
-          直接粘贴自然语言描述的训练计划（含目标配速、目标心率等），由你选择的大模型 API 解析为结构化数据。
-          接口地址、API Key、模型名称会保存在你浏览器的本地存储中，下次打开自动填好；它们只会发送给你选择的模型服务商，不会上传到本工具的服务器。
-        </p>
-        <label>
-          模型服务商
-          <select value={provider} onChange={(e) => handleProviderChange(e.target.value as keyof typeof LLM_PRESETS)}>
-            {Object.entries(LLM_PRESETS).map(([key, p]) => (
-              <option key={key} value={key}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          接口地址（Base URL）
-          <input
-            type="text"
-            placeholder="https://api.deepseek.com/v1"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-          />
-        </label>
-        <label>
-          API Key
-          <input type="password" placeholder="sk-..." value={llmApiKey} onChange={(e) => setLlmApiKey(e.target.value)} />
-        </label>
-        <label>
-          模型名称
-          <input type="text" placeholder="deepseek-chat" value={model} onChange={(e) => setModel(e.target.value)} />
-        </label>
-        <label>
-          训练计划文本
-          <textarea
-            rows={10}
-            placeholder="粘贴自然语言训练计划，例如：&#10;周二：阈值训练 10公里，3组×8分钟阈值跑（配速 4:55-5:15/km，心率 168-174），组间慢跑2分钟恢复&#10;周四：有氧跑 8公里，心率 135-145..."
-            value={planText}
-            onChange={(e) => setPlanText(e.target.value)}
-          />
-        </label>
-        <button onClick={handleParse} disabled={parsing || !planText.trim() || !model.trim() || !baseUrl.trim() || !llmApiKey.trim()}>
-          {parsing ? '解析中…' : '解析计划'}
+      <div className="row">
+        <div>
+          <h1>Garmin AI 训练计划导入工具</h1>
+          <p className="hint">
+            选一种方式生成训练计划，预览确认后一键同步到你的 Garmin Connect 账号。
+            所有数据仅在本地处理，不会上传到任何第三方服务器。
+          </p>
+        </div>
+        <button className="ghost" onClick={() => setShowSettings((v) => !v)} title="模型接口设置">
+          ⚙️ 设置
         </button>
-        {parseError && <p className="error">解析出错：{parseError}</p>}
-      </section>
+      </div>
+
+      {showSettings && (
+        <section className="card">
+          <h2>设置：大模型接口配置</h2>
+          <p className="hint">
+            用于「按 VDOT 生成课表」「自然语言解析」两个入口。接口地址、API Key、模型名称会保存在你浏览器的本地存储中，
+            下次打开自动填好；它们只会发送给你选择的模型服务商，不会上传到本工具的服务器。
+          </p>
+          <label>
+            模型服务商
+            <select value={provider} onChange={(e) => handleProviderChange(e.target.value as keyof typeof LLM_PRESETS)}>
+              {Object.entries(LLM_PRESETS).map(([key, p]) => (
+                <option key={key} value={key}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            接口地址（Base URL）
+            <input
+              type="text"
+              placeholder="https://api.deepseek.com/v1"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+            />
+          </label>
+          <label>
+            API Key
+            <input type="password" placeholder="sk-..." value={llmApiKey} onChange={(e) => setLlmApiKey(e.target.value)} />
+          </label>
+          <label>
+            模型名称
+            <input type="text" placeholder="deepseek-chat" value={model} onChange={(e) => setModel(e.target.value)} />
+          </label>
+          <button className="ghost" onClick={() => setShowSettings(false)}>
+            完成设置
+          </button>
+        </section>
+      )}
 
       <section className="card">
-        <h2>第一步 B：按当前跑力（VDOT）自动生成课表</h2>
+        <h2>入口 1：按 VDOT 生成课表</h2>
         <p className="hint">
-          不想自己写文字描述？告诉 AI 你当前的跑力（VDOT）和训练诉求，由它按 Jack Daniels 训练理论直接生成结构化课表
-          （热身、主体训练、放松，含目标配速 / 心率区间，自动按 Jack Daniels 的 E/M/T/I/R 配速换算）。
-          需要先在上方填好 LLM 接口配置。
+          告诉 AI 你当前的跑力（VDOT）和训练诉求，由它按 Jack Daniels 训练理论直接生成包含目标配速 / 心率区间的结构化课表。
         </p>
         <div className="card" style={{ background: 'var(--code-bg)', boxShadow: 'none', margin: '0 0 16px' }}>
           <h2 style={{ fontSize: 15 }}>不知道自己的 VDOT？用近期比赛成绩估算</h2>
@@ -607,13 +603,6 @@ function App() {
           )}
         </div>
         <label>
-          生成类型
-          <select value={genMode} onChange={(e) => setGenMode(e.target.value as 'single' | 'week')}>
-            <option value="single">单次训练课表</option>
-            <option value="week">一周训练课表</option>
-          </select>
-        </label>
-        <label>
           当前跑力（VDOT）
           <input
             type="number"
@@ -622,6 +611,13 @@ function App() {
             value={genVdot}
             onChange={(e) => setGenVdot(e.target.value)}
           />
+        </label>
+        <label>
+          生成类型
+          <select value={genMode} onChange={(e) => setGenMode(e.target.value as 'single' | 'week')}>
+            <option value="single">单次训练课表</option>
+            <option value="week">一周训练课表</option>
+          </select>
         </label>
         {genMode === 'single' ? (
           <label>
@@ -661,208 +657,93 @@ function App() {
           {generating ? '生成中…' : '生成课表'}
         </button>
         {generateError && <p className="error">生成出错：{generateError}</p>}
+        {!llmApiKey.trim() && <p className="hint">请先点击右上角「⚙️ 设置」填写大模型接口配置。</p>}
       </section>
 
       <section className="card">
-        <h2>第一步 C：导入训练计划 JSON</h2>
-        <p className="hint">
-          也可以让 AI 按照下面的结构直接生成 JSON，然后粘贴到下方文本框，或直接选择 JSON 文件导入。
-        </p>
-        <pre className="schema">{`{
-  "name": "计划名称",
-  "workouts": [
-    {
-      "date": "2026-06-08",
-      "title": "周二间歇跑",
-      "steps": [
-        { "type": "warmup", "distanceMeters": 1000, "targetPace": "6:00/km" },
-        { "type": "interval", "distanceMeters": 800, "repeat": 6, "targetPace": "4:30/km", "targetHeartRate": "168-174" },
-        { "type": "recovery", "distanceMeters": 400, "targetPace": "6:30/km" },
-        { "type": "cooldown", "distanceMeters": 1000, "targetPace": "6:00/km" }
-      ]
-    }
-  ]
-}`}</pre>
-        <p className="hint">
-          type 取值：warmup（热身）/ interval（间歇）/ recovery（恢复）/ cooldown（放松）/ easy（轻松跑）/ rest（休息日）。
-          每个训练步骤需包含 distanceMeters（米）或 durationSeconds（秒）之一。
-          相邻且 repeat 数值相同的步骤（例如"间歇 + 组间恢复"各标 repeat: 3）会被自动打包成 Garmin 里的"重复组"，
-          显示为"3 次"，而不是同步成三段重复的独立步骤。
-        </p>
+        <h2>入口 2：粘贴训练计划文本</h2>
+        <p className="hint">直接粘贴一段自然语言描述的训练计划（含目标配速、目标心率等），AI 会解析成结构化课表。</p>
+        <label>
+          训练计划文本
+          <textarea
+            rows={8}
+            placeholder="粘贴自然语言训练计划，例如：&#10;周二：阈值训练 10公里，3组×8分钟阈值跑（配速 4:55-5:15/km，心率 168-174），组间慢跑2分钟恢复&#10;周四：有氧跑 8公里，心率 135-145..."
+            value={planText}
+            onChange={(e) => setPlanText(e.target.value)}
+          />
+        </label>
+        <button onClick={handleParse} disabled={parsing || !planText.trim() || !model.trim() || !baseUrl.trim() || !llmApiKey.trim()}>
+          {parsing ? '解析中…' : '解析并生成'}
+        </button>
+        {parseError && <p className="error">解析出错：{parseError}</p>}
+      </section>
+
+      <section className="card">
+        <h2>入口 3：导入 JSON</h2>
+        <p className="hint">上传符合格式的 JSON 文件，直接导入课表。</p>
         <label>
           从文件导入
           <input type="file" accept="application/json,.json" onChange={handleFile} />
         </label>
-        <label>
-          或粘贴 JSON
-          <textarea
-            rows={10}
-            placeholder="粘贴符合上述结构的 JSON..."
-            value={planJsonText}
-            onChange={(e) => setPlanJsonText(e.target.value)}
-          />
-        </label>
         <button onClick={handleLoadJson} disabled={!planJsonText.trim()}>
-          加载计划
+          导入
         </button>
         {loadError && <p className="error">导入出错：{loadError}</p>}
       </section>
 
       {plan && (
         <section className="card">
-          <h2>第二步：预览与编辑</h2>
+          <h2>预览</h2>
           <p className="hint">计划名称：{plan.name}</p>
-          {plan.workouts.map((workout, wi) => (
-            <div className="workout" key={wi}>
-              <div className="workout-header">
-                <input
-                  type="date"
-                  value={workout.date}
-                  onChange={(e) => updateWorkout(wi, { date: e.target.value })}
-                />
-                <input
-                  type="text"
-                  value={workout.title}
-                  onChange={(e) => updateWorkout(wi, { title: e.target.value })}
-                />
-              </div>
-              {workout.steps.length === 0 ? (
-                <p className="hint">（无具体步骤 / 休息日）</p>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>类型</th>
-                      <th>距离(米)</th>
-                      <th>时长(秒)</th>
-                      <th>目标配速</th>
-                      <th>目标心率</th>
-                      <th>重复</th>
-                      <th>备注</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workout.steps.map((step, si) => (
-                      <tr key={si}>
-                        <td>
-                          <select
-                            value={step.type}
-                            onChange={(e) => updateStep(wi, si, { type: e.target.value as StepType })}
-                          >
-                            {STEP_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={step.distanceMeters ?? ''}
-                            onChange={(e) =>
-                              updateStep(wi, si, {
-                                distanceMeters: e.target.value === '' ? undefined : Number(e.target.value),
-                              })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={step.durationSeconds ?? ''}
-                            onChange={(e) =>
-                              updateStep(wi, si, {
-                                durationSeconds: e.target.value === '' ? undefined : Number(e.target.value),
-                              })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={step.targetPace ?? ''}
-                            onChange={(e) => updateStep(wi, si, { targetPace: e.target.value || undefined })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            placeholder="如 150-160 或 <145"
-                            value={step.targetHeartRate ?? ''}
-                            onChange={(e) => updateStep(wi, si, { targetHeartRate: e.target.value || undefined })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={step.repeat ?? ''}
-                            onChange={(e) =>
-                              updateStep(wi, si, {
-                                repeat: e.target.value === '' ? undefined : Number(e.target.value),
-                              })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={step.notes ?? ''}
-                            onChange={(e) => updateStep(wi, si, { notes: e.target.value || undefined })}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              <p className="hint">{workout.steps.map(stepSummary).join('  →  ')}</p>
-            </div>
-          ))}
+          <div className="row" style={{ gap: 16, alignItems: 'stretch' }}>
+            {plan.workouts.map((workout, wi) => {
+              const { totalDurationSeconds, totalDistanceMeters, stepCount } = workoutTotals(workout)
+              return (
+                <div className="card" key={wi} style={{ flex: '1 1 220px', margin: 0 }}>
+                  <p className="hint" style={{ fontWeight: 600, color: 'var(--text-h)' }}>
+                    {workout.date} · {workout.title}
+                  </p>
+                  <p className="hint">总时长：{formatDuration(totalDurationSeconds)}</p>
+                  <p className="hint">预估距离：{formatDistance(totalDistanceMeters)}</p>
+                  <p className="hint">步骤数：{stepCount > 0 ? `${stepCount} 步` : '休息日 / 无具体步骤'}</p>
+                </div>
+              )
+            })}
+          </div>
         </section>
       )}
 
       {plan && (
         <section className="card">
-          <h2>第三步：同步到 Garmin</h2>
+          <h2>同步到 Garmin</h2>
           <p className="hint warn">
             本工具通过非官方接口登录 Garmin Connect（账号密码仅保存在本机内存中，不会上传）。
             该方式依赖 Garmin 网页接口，可能因 Garmin 改版而失效，请谨慎使用。
           </p>
           {restoringSession ? (
             <p className="hint">正在恢复上次的 Garmin 登录状态…</p>
-          ) : !loggedIn ? (
-            <>
-              <label>
-                账号区域
-                <select value={gDomain} onChange={(e) => setGDomain(e.target.value as 'garmin.cn' | 'garmin.com')}>
-                  <option value="garmin.cn">中国区（佳明中国 / garmin.cn）</option>
-                  <option value="garmin.com">国际区（garmin.com）</option>
-                </select>
-              </label>
-              <label>
-                Garmin 账号
-                <input type="text" value={gUsername} onChange={(e) => setGUsername(e.target.value)} />
-              </label>
-              <label>
-                密码
-                <input type="password" value={gPassword} onChange={(e) => setGPassword(e.target.value)} />
-              </label>
-              <button onClick={handleLogin} disabled={loggingIn || !gUsername || !gPassword}>
-                {loggingIn ? '登录中…' : '登录 Garmin'}
-              </button>
-              {loginError && <p className="error">登录出错：{loginError}</p>}
-            </>
-          ) : (
+          ) : loggedIn && !showGarminForm ? (
             <>
               <div className="row">
-                <p className="hint">已登录 Garmin（{gUsername}），登录状态已保存在本机，下次打开无需重新登录。</p>
-                <button className="ghost" onClick={handleLogout}>
-                  退出登录
-                </button>
+                <p className="hint">已连接 Garmin ✓（{gUsername}），下次打开无需重新登录。</p>
+                <span className="row" style={{ gap: 12 }}>
+                  <a
+                    href="#"
+                    className="hint"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setShowGarminForm(true)
+                    }}
+                  >
+                    切换账号
+                  </a>
+                  <button className="ghost" onClick={handleLogout}>
+                    退出登录
+                  </button>
+                </span>
               </div>
               <button onClick={handleSync} disabled={syncing}>
-                {syncing ? '同步中…' : '同步到手表'}
+                {syncing ? '同步中…' : '确认并同步'}
               </button>
               {syncError && <p className="error">同步出错：{syncError}</p>}
               {syncResults && (
@@ -886,11 +767,56 @@ function App() {
                 </>
               )}
             </>
+          ) : (
+            <>
+              {loggedIn && (
+                <p className="hint">
+                  当前已连接 Garmin（{gUsername}）。在下方登录新账号将替换当前连接。
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setShowGarminForm(false)
+                    }}
+                  >
+                    {' '}
+                    取消，继续使用当前账号
+                  </a>
+                </p>
+              )}
+              <label>
+                账号区域
+                <select value={gDomain} onChange={(e) => setGDomain(e.target.value as 'garmin.cn' | 'garmin.com')}>
+                  <option value="garmin.cn">中国区（佳明中国 / garmin.cn）</option>
+                  <option value="garmin.com">国际区（garmin.com）</option>
+                </select>
+              </label>
+              <label>
+                Garmin 账号
+                <input type="text" value={gUsername} onChange={(e) => setGUsername(e.target.value)} />
+              </label>
+              <label>
+                密码
+                <input type="password" value={gPassword} onChange={(e) => setGPassword(e.target.value)} />
+              </label>
+              <button
+                onClick={() => {
+                  setShowGarminForm(false)
+                  handleLogin()
+                }}
+                disabled={loggingIn || !gUsername || !gPassword}
+              >
+                {loggingIn ? '登录中…' : '登录 Garmin'}
+              </button>
+              {loginError && <p className="error">登录出错：{loginError}</p>}
+              <p className="hint">登录成功后，连接状态会保存在本机，下次打开无需重新登录。</p>
+            </>
           )}
         </section>
       )}
     </div>
   )
 }
+
 
 export default App
