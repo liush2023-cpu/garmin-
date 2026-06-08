@@ -120,6 +120,42 @@ function removeFromSyncLog(workoutIds: string[]) {
   saveSyncLog(loadSyncLog().filter((e) => !ids.has(e.workoutId)))
 }
 
+// --- VDOT 估算（Jack Daniels / Daniels-Gilbert 公式） ----------------------
+//
+// 给定一次比赛的距离（米）和完赛时间（分钟），按《丹尼尔斯跑步方程式》
+// 里的经验公式精确计算 VDOT，避免用户去外部网站查表。
+//
+//   v        = 配速，单位 米/分钟
+//   VO2      = -4.60 + 0.182258·v + 0.000104·v²            （该配速消耗的摄氧量）
+//   %VO2max  = 0.8 + 0.1894393·e^(-0.012778·t) + 0.2989558·e^(-0.1932605·t)
+//              （完赛时间 t 分钟时，全程平均用到的最大摄氧量百分比）
+//   VDOT     = VO2 / %VO2max
+//
+// 这正是 Daniels 书中附表、以及多数在线 VDOT 计算器背后使用的公式。
+function estimateVdot(distanceMeters: number, timeMinutes: number): number | null {
+  if (!Number.isFinite(distanceMeters) || !Number.isFinite(timeMinutes)) return null
+  if (distanceMeters <= 0 || timeMinutes <= 0) return null
+
+  const v = distanceMeters / timeMinutes
+  const vo2 = -4.6 + 0.182258 * v + 0.000104 * v * v
+  const pctMax =
+    0.8 +
+    0.1894393 * Math.exp(-0.012778 * timeMinutes) +
+    0.2989558 * Math.exp(-0.1932605 * timeMinutes)
+  if (pctMax <= 0) return null
+
+  const vdot = vo2 / pctMax
+  return Number.isFinite(vdot) && vdot > 0 ? vdot : null
+}
+
+const RACE_PRESETS = {
+  '5k': { label: '5 公里', meters: 5000 },
+  '10k': { label: '10 公里', meters: 10000 },
+  half: { label: '半程马拉松', meters: 21097.5 },
+  full: { label: '全程马拉松', meters: 42195 },
+  custom: { label: '自定义距离', meters: 0 },
+} as const
+
 const STEP_TYPES: StepType[] = ['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest']
 
 const VALID_STEP_TYPES = new Set<StepType>(['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest'])
@@ -176,6 +212,15 @@ function App() {
   const [planText, setPlanText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
+
+  // 用近期比赛成绩估算 VDOT
+  const [raceDistKey, setRaceDistKey] = useState<keyof typeof RACE_PRESETS>('10k')
+  const [raceCustomKm, setRaceCustomKm] = useState('10')
+  const [raceHours, setRaceHours] = useState('0')
+  const [raceMinutes, setRaceMinutes] = useState('45')
+  const [raceSeconds, setRaceSeconds] = useState('0')
+  const [vdotEstimate, setVdotEstimate] = useState<number | null>(null)
+  const [vdotEstimateError, setVdotEstimateError] = useState<string | null>(null)
 
   // 按 VDOT / 训练目的直接生成课表
   const [genMode, setGenMode] = useState<'single' | 'week'>('single')
@@ -278,6 +323,29 @@ function App() {
     } finally {
       setParsing(false)
     }
+  }
+
+  function handleEstimateVdot() {
+    setVdotEstimateError(null)
+    setVdotEstimate(null)
+    const distanceMeters =
+      raceDistKey === 'custom' ? Number(raceCustomKm) * 1000 : RACE_PRESETS[raceDistKey].meters
+    const timeMinutes = (Number(raceHours) || 0) * 60 + (Number(raceMinutes) || 0) + (Number(raceSeconds) || 0) / 60
+    if (!distanceMeters || distanceMeters <= 0) {
+      setVdotEstimateError('请输入有效的比赛距离')
+      return
+    }
+    if (!timeMinutes || timeMinutes <= 0) {
+      setVdotEstimateError('请输入有效的完赛时间')
+      return
+    }
+    const vdot = estimateVdot(distanceMeters, timeMinutes)
+    if (vdot == null) {
+      setVdotEstimateError('无法根据该成绩估算 VDOT，请检查距离和时间是否合理')
+      return
+    }
+    setVdotEstimate(vdot)
+    setGenVdot(vdot.toFixed(1))
   }
 
   async function handleGenerate() {
@@ -490,6 +558,54 @@ function App() {
           （热身、主体训练、放松，含目标配速 / 心率区间，自动按 Jack Daniels 的 E/M/T/I/R 配速换算）。
           需要先在上方填好 LLM 接口配置。
         </p>
+        <div className="card" style={{ background: 'var(--code-bg)', boxShadow: 'none', margin: '0 0 16px' }}>
+          <h2 style={{ fontSize: 15 }}>不知道自己的 VDOT？用近期比赛成绩估算</h2>
+          <p className="hint">
+            按 Jack Daniels《丹尼尔斯跑步方程式》里的 VDOT 公式精确计算（与官方对照表、主流在线计算器同源），
+            填入一次近期全力跑的比赛/测试成绩（距离 + 完赛时间）即可。
+          </p>
+          <div className="row">
+            <label style={{ flex: 1, minWidth: 160 }}>
+              比赛距离
+              <select value={raceDistKey} onChange={(e) => setRaceDistKey(e.target.value as keyof typeof RACE_PRESETS)}>
+                {Object.entries(RACE_PRESETS).map(([key, p]) => (
+                  <option key={key} value={key}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {raceDistKey === 'custom' && (
+              <label style={{ flex: 1, minWidth: 120 }}>
+                距离（公里）
+                <input type="number" min={0} step="0.1" value={raceCustomKm} onChange={(e) => setRaceCustomKm(e.target.value)} />
+              </label>
+            )}
+          </div>
+          <div className="row">
+            <label style={{ flex: 1, minWidth: 80 }}>
+              小时
+              <input type="number" min={0} value={raceHours} onChange={(e) => setRaceHours(e.target.value)} />
+            </label>
+            <label style={{ flex: 1, minWidth: 80 }}>
+              分钟
+              <input type="number" min={0} max={59} value={raceMinutes} onChange={(e) => setRaceMinutes(e.target.value)} />
+            </label>
+            <label style={{ flex: 1, minWidth: 80 }}>
+              秒
+              <input type="number" min={0} max={59} value={raceSeconds} onChange={(e) => setRaceSeconds(e.target.value)} />
+            </label>
+          </div>
+          <button className="ghost" onClick={handleEstimateVdot}>
+            估算 VDOT
+          </button>
+          {vdotEstimateError && <p className="error">{vdotEstimateError}</p>}
+          {vdotEstimate != null && (
+            <p className="hint">
+              估算结果：<strong>VDOT ≈ {vdotEstimate.toFixed(1)}</strong>（已自动填入下方"当前跑力"）
+            </p>
+          )}
+        </div>
         <label>
           生成类型
           <select value={genMode} onChange={(e) => setGenMode(e.target.value as 'single' | 'week')}>
