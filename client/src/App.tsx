@@ -70,6 +70,7 @@ function App() {
           baseUrl={llm.baseUrl}
           apiKey={llm.apiKey}
           model={llm.model}
+          serverHasApiKey={llm.serverHasApiKey}
           onProviderChange={llm.handleProviderChange}
           onBaseUrlChange={llm.setBaseUrl}
           onApiKeyChange={llm.setApiKey}
