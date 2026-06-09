@@ -360,26 +360,48 @@ const SAMPLE_TEXT = `周一：轻松跑 8公里，配速 6:00-6:30/km
 
 const SAMPLE_JSON = JSON.stringify({ name: '示例计划', workouts: [{ date: new Date().toISOString().slice(0, 10), title: '阈值间歇', steps: [{ type: 'warmup', distanceMeters: 2000, durationSeconds: 720, targetPace: '6:00/km' }, { type: 'interval', distanceMeters: 1600, durationSeconds: 480, targetPace: '4:55-5:10/km', targetHeartRate: '165-175', repeat: 3 }, { type: 'recovery', distanceMeters: 400, durationSeconds: 90, targetPace: '6:30/km', repeat: 3 }, { type: 'cooldown', distanceMeters: 2000, durationSeconds: 720, targetPace: '6:00/km' }] }] }, null, 2)
 
-// ── WorkoutBar ────────────────────────────────────────────────────────────
+// ── Profile Bar (workout structure visualizer) ────────────────────────
 
-function WorkoutBar({ steps, height = 6, showLegend = false }: { steps: WorkoutStep[]; height?: number; showLegend?: boolean }) {
-  const segs = steps.map(s => ({ type: s.type, w: estimateStepDur(s) * (s.repeat && s.repeat > 1 ? s.repeat : 1) }))
+const PROFILE_BAR_COLORS: Record<StepType, string> = {
+  warmup:   '#93C5FD',  // light blue
+  interval: '#F87171',  // red
+  recovery: '#6EE7B7',  // green
+  cooldown: '#93C5FD',  // light blue
+  easy:     '#6EE7B7',  // green
+  rest:     '#CBD5E1',  // gray
+}
+
+function WorkoutBar({ steps, height = 12, showLegend = false }: { steps: WorkoutStep[]; height?: number; showLegend?: boolean }) {
+  const segs = steps.map(s => {
+    const rep = s.repeat && s.repeat > 1 ? s.repeat : 1
+    const dur = estimateStepDur(s) * rep
+    const tooltip = [
+      STEP_TYPE_LABELS[s.type],
+      s.distanceMeters ? (s.distanceMeters >= 1000 ? `${(s.distanceMeters/1000).toFixed(1)}km` : `${s.distanceMeters}m`) : null,
+      dur ? fmtDur(dur) : null,
+      s.targetPace ?? null,
+      s.targetHeartRate ? `♥ ${s.targetHeartRate}` : null,
+      rep > 1 ? `×${rep}` : null,
+    ].filter(Boolean).join(' · ')
+    return { type: s.type, w: dur, tooltip }
+  })
   const total = segs.reduce((a, b) => a + b.w, 0)
   if (!total) return null
   const seen = [...new Set(segs.map(s => s.type))]
   return (
-    <div>
-      <div style={{ display: 'flex', height, borderRadius: 3, overflow: 'hidden', gap: 1 }}>
+    <div className="profile-bar-wrap">
+      <div className="profile-bar" style={{ height }}>
         {segs.map((seg, i) => (
-          <div key={i} title={STEP_TYPE_LABELS[seg.type]}
-            style={{ flex: seg.w / total, background: STEP_BAR_COLORS[seg.type], minWidth: 3 }} />
+          <div key={i} className="profile-bar__seg"
+            title={seg.tooltip}
+            style={{ flex: seg.w / total, background: PROFILE_BAR_COLORS[seg.type] }} />
         ))}
       </div>
       {showLegend && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', marginTop: 5 }}>
+        <div className="profile-legend">
           {seen.map(t => (
-            <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx-4)' }}>
-              <span style={{ width: 7, height: 7, borderRadius: 2, background: STEP_BAR_COLORS[t], flexShrink: 0 }} />
+            <span key={t} className="profile-legend__item">
+              <span className="profile-legend__dot" style={{ background: PROFILE_BAR_COLORS[t] }} />
               {STEP_TYPE_LABELS[t]}
             </span>
           ))}
@@ -937,30 +959,37 @@ export default function App() {
       {/* ── Header ── */}
       <header className="app-header">
         <div className="app-header__brand">
-          <span className="app-header__brand-dot" />
+          <div className="app-header__brand-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </div>
           训练计划导入工具
         </div>
 
         {plan && viewModels.length > 0 && (
-          <div className="header-summary">
-            <span className="header-summary__item">{enabledVms.length} 个训练</span>
-            <span className="header-summary__sep">·</span>
-            <span className="header-summary__item">{fmtDist(totalDist)}</span>
+          <div className="header-metrics">
+            <div className="metric">
+              <span className="metric__val">{enabledVms.length}</span>
+              <span className="metric__unit">训练</span>
+            </div>
+            {totalDist > 0 && (
+              <div className="metric">
+                <span className="metric__val">{(totalDist / 1000).toFixed(1)}</span>
+                <span className="metric__unit">公里</span>
+              </div>
+            )}
             {totalDur > 0 && (
-              <>
-                <span className="header-summary__sep">·</span>
-                <span className="header-summary__item">约 {fmtDur(totalDur)}</span>
-              </>
+              <div className="metric">
+                <span className="metric__val">{fmtDur(totalDur)}</span>
+                <span className="metric__unit">总时长</span>
+              </div>
             )}
-            {pendingCount > 0 && (
-              <>
-                <span className="header-summary__sep">·</span>
-                <span className="header-summary__item header-summary__item--warn"
-                  style={{ cursor: 'pointer' }} onClick={scrollToFirstPending}>
-                  ⚠ {pendingCount} 个需确认
-                </span>
-              </>
-            )}
+            <div className={`metric ${pendingCount > 0 ? 'metric--warn metric--clickable' : 'metric--ok'}`}
+              onClick={pendingCount > 0 ? scrollToFirstPending : undefined}>
+              <span className="metric__val">{pendingCount}</span>
+              <span className="metric__unit">{pendingCount > 0 ? '需确认' : '待确认'}</span>
+            </div>
           </div>
         )}
 
@@ -1010,7 +1039,12 @@ export default function App() {
           {plan ? (
             <>
               <div className="panel__collapse-trigger" onClick={() => setInputCollapsed(v => !v)}>
-                <span className="fw-6" style={{ fontSize: 12 }}>原始训练计划</span>
+                <div className="panel__source-header">
+                  <span className="fw-6" style={{ fontSize: 12 }}>计划源</span>
+                  <span className={`panel__source-status ${parseStatus === 'success' ? 'panel__source-status--ok' : ''}`}>
+                    {parseStatus === 'success' ? `✓ 已解析 ${plan.workouts.length} 条` : '待解析'}
+                  </span>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div className="seg" style={{ transform: 'scale(0.85)', transformOrigin: 'right' }}>
                     {(['text', 'json', 'vdot'] as const).map(t => (
@@ -1028,7 +1062,7 @@ export default function App() {
           ) : (
             <>
               <div className="panel__header">
-                <span className="fw-6" style={{ fontSize: 13 }}>训练计划</span>
+                <span className="fw-6" style={{ fontSize: 13 }}>计划源</span>
                 <div className="seg">
                   {(['text', 'json', 'vdot'] as const).map(t => (
                     <button key={t} className={`seg__btn ${inputTab === t ? 'seg__btn--active' : ''}`}
@@ -1056,17 +1090,23 @@ export default function App() {
         {/* ════ CENTER: Results ════ */}
         <div className={`panel panel--center ${mobileTab === 'results' ? 'panel--active' : ''}`}>
           <div className="panel__header">
-            <span className="fw-6" style={{ fontSize: 13 }}>解析结果</span>
+            <span className="fw-6" style={{ fontSize: 13 }}>训练时间线</span>
             {plan && <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>{plan.name}</span>}
           </div>
 
           {parseStatus === 'loading' && (
-            <div className="panel__body" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="panel__body" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[1,2,3,4].map(i => (
-                <div key={i} className="wo-card" style={{ padding: 14 }}>
-                  <div className="skeleton" style={{ height: 14, width: `${40+i*10}%`, marginBottom: 8, borderRadius: 4 }} />
-                  <div className="skeleton" style={{ height: 11, width: '55%', marginBottom: 8, borderRadius: 4 }} />
-                  <div className="skeleton" style={{ height: 6, borderRadius: 3 }} />
+                <div key={i} style={{ display: 'flex', gap: 12, padding: '8px 0' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 44 }}>
+                    <div className="skeleton" style={{ width: 10, height: 10, borderRadius: '50%' }} />
+                    <div className="skeleton" style={{ height: 12, width: 32, borderRadius: 3 }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div className="skeleton" style={{ height: 15, width: `${40+i*10}%`, marginBottom: 8, borderRadius: 4 }} />
+                    <div className="skeleton" style={{ height: 12, width: '35%', marginBottom: 8, borderRadius: 4 }} />
+                    <div className="skeleton" style={{ height: 12, borderRadius: 4 }} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1075,190 +1115,286 @@ export default function App() {
           {parseStatus !== 'loading' && !plan && (
             <div className="panel__body">
               <div className="empty">
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ opacity: .3 }}>
-                  <rect x="4" y="8" width="32" height="24" rx="3" stroke="currentColor" strokeWidth="2" />
-                  <line x1="4" y1="15" x2="36" y2="15" stroke="currentColor" strokeWidth="2" />
-                  <line x1="12" y1="22" x2="24" y2="22" stroke="currentColor" strokeWidth="2" />
-                  <line x1="12" y1="27" x2="28" y2="27" stroke="currentColor" strokeWidth="2" />
+                <svg width="44" height="44" viewBox="0 0 44 44" fill="none" style={{ opacity: .25 }}>
+                  <path d="M22 4 L22 40 M4 22 C4 22 10 14 22 14 C34 14 40 22 40 22" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
                 </svg>
-                <span className="empty__title">粘贴训练计划后，解析结果会显示在这里</span>
+                <span className="empty__title">粘贴训练计划后，时间线会显示在这里</span>
                 <span className="empty__sub">支持自然语言描述、JSON 格式，或由 AI 按 VDOT 生成</span>
               </div>
             </div>
           )}
 
-          {plan && parseStatus !== 'loading' && (
-            <>
-              {warnings.length > 0 && (
-                <div className="warnings-banner">
-                  {warnings.map((w, i) => (
-                    <div key={i} className={`warn-banner warn-banner--${w.level}`}>
-                      <span className="warn-banner__icon">{w.level === 'error' ? '✕' : '⚠'}</span>
-                      <span>{w.msg}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {plan && parseStatus !== 'loading' && (() => {
+            // Week structure counts
+            const structCounts: Record<string, number> = {}
+            viewModels.forEach(vm => {
+              const key = vm.sportType === 'running' ? vm.category : vm.sportType
+              if (key !== 'rest') structCounts[key] = (structCounts[key] || 0) + 1
+            })
+            const structEntries = Object.entries(structCounts)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 6)
 
-              <div className="panel__body" style={{ padding: '8px 0' }}>
-                {viewModels.map((vm, wi) => {
-                  const { dur, dist } = workoutTotals(vm)
-                  const sportCfg  = SPORT_CONFIG[vm.sportType]
-                  const catCfg    = CAT_CONFIG[vm.category]
-                  const intCfg    = INT_CONFIG[getIntensity(vm.category)]
-                  const isRest    = vm.sportType === 'rest'
-                  const isRunning = vm.sportType === 'running'
-                  const expanded  = expandedRow === wi
-                  const isPending = vm.confirmStatus === 'pending' && vm.enabledForSync
-                  const isConfirmed = vm.confirmStatus === 'confirmed'
-                  const isDisabled  = !vm.enabledForSync
-
-                  return (
-                    <div key={wi}
-                      ref={el => { cardRefs.current[wi] = el }}
-                      className={`wo-card ${expanded ? 'wo-card--expanded' : ''} ${isPending ? 'wo-card--warn' : ''} ${isConfirmed ? 'wo-card--confirmed' : ''} ${isDisabled ? 'wo-card--disabled' : ''}`}>
-
-                      <div className="wo-card__header" onClick={() => !isRest && setExpandedRow(expanded ? null : wi)}>
-                        {/* Date */}
-                        <div className="wo-card__date">
-                          <span className="wo-card__date-val">{vm.date.slice(5)}</span>
-                          <span className="wo-card__weekday">{weekday(vm.date)}</span>
-                        </div>
-
-                        {/* Main */}
-                        <div className="wo-card__main">
-                          <div className="wo-card__title-row">
-                            <span className="wo-card__title" style={isDisabled ? { color: 'var(--tx-4)', textDecoration: 'line-through' } : {}}>
-                              {isRest ? '休息日' : vm.title}
-                            </span>
-                            {/* Sport type tag */}
-                            <span className="type-tag" style={{ background: sportCfg.bg, color: sportCfg.color }}>
-                              {sportCfg.label}
-                            </span>
-                            {/* Category tag (only for running) */}
-                            {isRunning && vm.category !== 'rest' && (
-                              <span className="type-tag" style={{ background: catCfg.bg, color: catCfg.color }}>
-                                {catCfg.label}
-                              </span>
-                            )}
-                            {/* Status badges */}
-                            {isPending && <span className="wo-card__status-badge wo-card__status-badge--pending">⚠ 需确认</span>}
-                            {isConfirmed && <span className="wo-card__status-badge wo-card__status-badge--confirmed">✓ 已确认</span>}
-                            {isDisabled && <span className="wo-card__status-badge wo-card__status-badge--disabled">不同步</span>}
-                          </div>
-                          {!isRest && vm.steps.length > 0 && (
-                            <div className="wo-card__bar-row">
-                              <WorkoutBar steps={vm.steps} height={5} />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Stats */}
-                        <div className="wo-card__stats">
-                          {!isRest && dist > 0 && <span className="wo-stat">{fmtDist(dist)}</span>}
-                          {!isRest && dur > 0 && <span className="wo-stat wo-stat--time">{fmtDur(dur)}</span>}
-                          {isRunning && <span className="intensity-dot" style={{ background: intCfg.dot }} title={intCfg.label} />}
-                          {/* Edit button */}
-                          <button className="btn btn--ghost btn--sm"
-                            style={{ fontSize: 11, padding: '2px 8px' }}
-                            onClick={e => { e.stopPropagation(); setEditIdx(wi) }}>
-                            编辑
-                          </button>
-                          {!isRest && (
-                            <button className="btn--icon expand-btn"
-                              onClick={e => { e.stopPropagation(); setExpandedRow(expanded ? null : wi) }}>
-                              {expanded ? '▲' : '▼'}
-                            </button>
-                          )}
-                        </div>
+            return (
+              <>
+                {warnings.length > 0 && (
+                  <div className="warnings-banner">
+                    {warnings.map((w, i) => (
+                      <div key={i} className={`warn-banner warn-banner--${w.level}`}>
+                        <span className="warn-banner__icon">{w.level === 'error' ? '✕' : '⚠'}</span>
+                        <span>{w.msg}</span>
                       </div>
+                    ))}
+                  </div>
+                )}
 
-                      {/* Expanded detail */}
-                      {expanded && !isRest && (
-                        <div className="wo-card__detail">
-                          {vm.confirmIssues.length > 0 && vm.enabledForSync && (
-                            <div className="wo-card__issue-list">
-                              {vm.confirmIssues.map((iss, ii) => (
-                                <div key={ii} className="wo-card__issue-item">⚠ {iss}</div>
-                              ))}
-                            </div>
-                          )}
-
-                          {isRunning && vm.steps.length > 0 && (
-                            <>
-                              <WorkoutBar steps={vm.steps} height={12} showLegend />
-                              <StepDetail steps={vm.steps} />
-                            </>
-                          )}
-
-                          {!isRunning && (
-                            <div style={{ fontSize: 12, color: 'var(--tx-3)', padding: '4px 0' }}>
-                              {sportCfg.garminSupport === 'notes'
-                                ? '此运动类型将以备注形式同步到 Garmin（不含步骤结构）。'
-                                : '此运动类型不参与 Garmin 同步。'}
-                              {vm.notes && <><br /><span style={{ color: 'var(--tx-2)' }}>备注：{vm.notes}</span></>}
-                            </div>
-                          )}
-
-                          {/* Confirm block */}
-                          {isPending && (
-                            <div className="confirm-block">
-                              <div className="confirm-block__title">需要确认</div>
-                              <div className="confirm-block__body">
-                                {vm.confirmIssues.map((iss, ii) => <p key={ii}>• {iss}</p>)}
-                                <p>系统会将相关说明写入 Garmin notes。同步后不会生成精确目标，只会显示备注。</p>
-                              </div>
-                              <div className="confirm-block__actions">
-                                <button className="btn btn--primary btn--sm" onClick={() => confirmVm(wi)}>
-                                  确认使用备注同步
-                                </button>
-                                <button className="btn btn--ghost btn--sm" onClick={() => setEditIdx(wi)}>
-                                  编辑训练类型
-                                </button>
-                                <button className="btn btn--ghost btn--sm" onClick={() => disableVm(wi)}>
-                                  不参与同步
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {isConfirmed && (
-                            <div className="confirm-done">✓ 已确认使用备注同步</div>
-                          )}
-                        </div>
-                      )}
+                {/* Week structure strip */}
+                {structEntries.length > 0 && (
+                  <div className="week-strip">
+                    <span className="week-strip__label">本周</span>
+                    <div className="week-strip__items">
+                      {structEntries.map(([key, count]) => {
+                        const cfg = (CAT_CONFIG as Record<string, { label: string; color: string; bg: string }>)[key]
+                          ?? (SPORT_CONFIG as Record<string, { label: string; color: string; bg: string }>)[key]
+                          ?? { label: key, color: '#6B7280', bg: '#F3F4F6' }
+                        return (
+                          <span key={key} className="week-strip__chip"
+                            style={{ background: cfg.bg, color: cfg.color }}>
+                            {cfg.label} {count}
+                          </span>
+                        )
+                      })}
                     </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
+                  </div>
+                )}
+
+                {/* Timeline */}
+                <div className="panel__body" style={{ padding: '8px 0' }}>
+                  <div className="timeline">
+                    {viewModels.map((vm, wi) => {
+                      const { dur, dist } = workoutTotals(vm)
+                      const sportCfg   = SPORT_CONFIG[vm.sportType]
+                      const catCfg     = CAT_CONFIG[vm.category]
+                      const intCfg     = INT_CONFIG[getIntensity(vm.category)]
+                      const isRest     = vm.sportType === 'rest'
+                      const isRunning  = vm.sportType === 'running'
+                      const expanded   = expandedRow === wi
+                      const isPending  = vm.confirmStatus === 'pending' && vm.enabledForSync
+                      const isConfirmed= vm.confirmStatus === 'confirmed'
+                      const isDisabled = !vm.enabledForSync
+
+                      // Node color: category color for running, sport color for others
+                      const nodeColor = isRest ? '#CBD5E1'
+                        : isRunning ? catCfg.color
+                        : sportCfg.color
+
+                      return (
+                        <div key={wi}
+                          ref={el => { cardRefs.current[wi] = el }}
+                          className={`wo-card ${expanded ? 'wo-card--expanded' : ''} ${isPending ? 'wo-card--warn' : ''} ${isConfirmed ? 'wo-card--confirmed' : ''} ${isDisabled ? 'wo-card--disabled' : ''}`}>
+
+                          {/* Left rail with colored node */}
+                          <div className="wo-card__rail">
+                            <div className="wo-card__node">
+                              <div className="wo-card__node-dot"
+                                style={{ background: nodeColor, color: nodeColor, boxShadow: `0 0 0 2px white, 0 0 0 3px ${nodeColor}` }} />
+                              <span className="wo-card__date-val">{vm.date.slice(5)}</span>
+                              <span className="wo-card__weekday">{weekday(vm.date)}</span>
+                            </div>
+                          </div>
+
+                          {/* Content */}
+                          <div className="wo-card__content" onClick={() => !isRest && setExpandedRow(expanded ? null : wi)}>
+                            <div className="wo-card__header">
+                              <div className="wo-card__main">
+                                <div className="wo-card__title-row">
+                                  <span className={`wo-card__title${isDisabled ? ' wo-card__title--muted' : ''}`}>
+                                    {isRest ? '休息日' : vm.title}
+                                  </span>
+                                  {/* Sport type tag */}
+                                  <span className="type-tag" style={{ background: sportCfg.bg, color: sportCfg.color }}>
+                                    {sportCfg.label}
+                                  </span>
+                                  {/* Category tag (running only) */}
+                                  {isRunning && vm.category !== 'rest' && (
+                                    <span className="type-tag" style={{ background: catCfg.bg, color: catCfg.color }}>
+                                      {catCfg.label}
+                                    </span>
+                                  )}
+                                  {isPending   && <span className="wo-card__status-badge wo-card__status-badge--pending">⚠ 需确认</span>}
+                                  {isConfirmed && <span className="wo-card__status-badge wo-card__status-badge--confirmed">✓ 已确认</span>}
+                                  {isDisabled  && <span className="wo-card__status-badge wo-card__status-badge--disabled">不同步</span>}
+                                </div>
+
+                                {/* Stats row */}
+                                {!isRest && (
+                                  <div className="wo-card__stats">
+                                    {dist > 0 && <span className="wo-stat">{fmtDist(dist)}</span>}
+                                    {dur  > 0 && <span className="wo-stat wo-stat--time">{fmtDur(dur)}</span>}
+                                    {isRunning && <span className="intensity-dot" style={{ background: intCfg.dot }} title={intCfg.label} />}
+                                  </div>
+                                )}
+
+                                {/* Profile bar (compact, shown on card) */}
+                                {!isRest && vm.steps.length > 0 && !expanded && (
+                                  <div style={{ marginTop: 6 }}>
+                                    <WorkoutBar steps={vm.steps} height={8} />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Hover actions */}
+                              <div className="wo-card__actions">
+                                <button className="btn btn--ghost btn--sm"
+                                  style={{ fontSize: 11, padding: '2px 8px' }}
+                                  onClick={e => { e.stopPropagation(); setEditIdx(wi) }}>
+                                  编辑
+                                </button>
+                                {!isRest && (
+                                  <button className="btn--icon expand-btn"
+                                    onClick={e => { e.stopPropagation(); setExpandedRow(expanded ? null : wi) }}>
+                                    {expanded ? '▲' : '▼'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Expanded detail */}
+                            {expanded && !isRest && (
+                              <div className="wo-card__detail">
+                                {vm.confirmIssues.length > 0 && vm.enabledForSync && (
+                                  <div className="wo-card__issue-list">
+                                    {vm.confirmIssues.map((iss, ii) => (
+                                      <div key={ii} className="wo-card__issue-item">⚠ {iss}</div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {isRunning && vm.steps.length > 0 && (
+                                  <>
+                                    <WorkoutBar steps={vm.steps} height={14} showLegend />
+                                    <StepDetail steps={vm.steps} />
+                                  </>
+                                )}
+
+                                {!isRunning && (
+                                  <div style={{ fontSize: 12, color: 'var(--tx-3)', padding: '4px 0', lineHeight: 1.6 }}>
+                                    {sportCfg.garminSupport === 'notes'
+                                      ? '此运动类型将以备注形式同步到 Garmin（不含步骤结构）。'
+                                      : '此运动类型不参与 Garmin 同步。'}
+                                    {vm.notes && <><br /><span style={{ color: 'var(--tx-2)' }}>备注：{vm.notes}</span></>}
+                                  </div>
+                                )}
+
+                                {isPending && (
+                                  <div className="confirm-block">
+                                    <div className="confirm-block__title">需要确认</div>
+                                    <div className="confirm-block__body">
+                                      {vm.confirmIssues.map((iss, ii) => <p key={ii}>• {iss}</p>)}
+                                      <p>系统会将相关说明写入 Garmin notes。同步后不会生成精确目标，只会显示备注。</p>
+                                    </div>
+                                    <div className="confirm-block__actions">
+                                      <button className="btn btn--primary btn--sm" onClick={() => confirmVm(wi)}>确认使用备注同步</button>
+                                      <button className="btn btn--ghost btn--sm" onClick={() => setEditIdx(wi)}>编辑训练类型</button>
+                                      <button className="btn btn--ghost btn--sm" onClick={() => disableVm(wi)}>不参与同步</button>
+                                    </div>
+                                  </div>
+                                )}
+                                {isConfirmed && <div className="confirm-done">✓ 已确认使用备注同步</div>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </>
+            )
+          })()}
         </div>
 
         {/* ════ RIGHT: Sync ════ */}
         <div className={`panel ${mobileTab === 'output' ? 'panel--active' : ''}`}>
-          <div className="panel__header">
-            <span className="fw-6" style={{ fontSize: 13 }}>同步到 Garmin</span>
+
+          {/* Device panel header */}
+          <div className="device-panel-header">
+            <div className="device-panel-title">Garmin Connect</div>
+            {restoringSession ? (
+              <div className="device-connection">
+                <div className="device-connection__status">
+                  <div className="device-status-dot" style={{ animation: 'pulse 1.2s infinite' }} />
+                  <div>
+                    <div className="device-connection__email" style={{ color: 'var(--tx-3)', fontSize: 12 }}>验证会话中…</div>
+                  </div>
+                </div>
+              </div>
+            ) : (loggedIn && garminAccount) ? (
+              <div className="device-connection">
+                <div className="device-connection__status">
+                  <div className="device-status-dot device-status-dot--on" />
+                  <div>
+                    <div className="device-connection__email">{garminAccount.email}</div>
+                    <div className="device-connection__sub">已连接 · {new Date(garminAccount.connectedAt).toLocaleDateString()}</div>
+                  </div>
+                </div>
+                <div className="device-connection__actions">
+                  <button className="btn btn--ghost btn--sm" onClick={handleSwitchAccount}>切换</button>
+                  <button className="btn btn--ghost btn--sm" onClick={handleLogout}>退出</button>
+                </div>
+              </div>
+            ) : garminAccount ? (
+              <div className="device-connection">
+                <div className="device-connection__status">
+                  <div className="device-status-dot device-status-dot--warn" />
+                  <div>
+                    <div className="device-connection__email" style={{ color: 'var(--warn)' }}>{garminAccount.email}</div>
+                    <div className="device-connection__sub" style={{ color: 'var(--warn)' }}>会话已过期</div>
+                  </div>
+                </div>
+                <div className="device-connection__actions">
+                  <button className="btn btn--primary btn--sm"
+                    onClick={() => { setShowGarminForm(true); setGUsername(garminAccount.email) }}>
+                    重新登录
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="device-connection">
+                <div className="device-connection__status">
+                  <div className="device-status-dot" />
+                  <div>
+                    <div className="device-connection__email" style={{ color: 'var(--tx-3)', fontSize: 12 }}>未连接</div>
+                  </div>
+                </div>
+                <button className="btn btn--primary btn--sm"
+                  onClick={() => { setShowGarminForm(true); setMobileTab('output') }}>
+                  登录 Garmin
+                </button>
+              </div>
+            )}
           </div>
+
+          {/* Sync metrics (only when plan loaded) */}
+          {viewModels.length > 0 && (
+            <div className="sync-metrics">
+              <div className="sync-metric">
+                <span className="sync-metric__val">{enabledVms.length}</span>
+                <span className="sync-metric__label">待同步训练</span>
+              </div>
+              <div className={`sync-metric ${pendingCount > 0 ? 'sync-metric--warn' : ''}`}
+                onClick={pendingCount > 0 ? scrollToFirstPending : undefined}>
+                <span className="sync-metric__val">{pendingCount}</span>
+                <span className="sync-metric__label">{pendingCount > 0 ? '需要确认 →' : '待确认 ✓'}</span>
+              </div>
+            </div>
+          )}
 
           <div className="panel__body gap-10">
 
-            {restoringSession ? (
-              <p style={{ fontSize: 12, color: 'var(--tx-3)' }}>正在验证 Garmin 会话…</p>
-            ) : (loggedIn || garminAccount) && !showGarminForm ? (
+            {(loggedIn || garminAccount) && !showGarminForm ? (
               <>
-                <div className="sync-connect-row">
-                  <span className="sync-connected-label">
-                    <span style={{ color: loggedIn ? 'var(--success)' : 'var(--warn)', fontSize: 8 }}>●</span>
-                    {loggedIn ? `已连接：${garminAccount?.email ?? gUsername}` : `会话已过期：${garminAccount?.email}`}
-                  </span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn--ghost btn--sm" onClick={handleSwitchAccount}>切换账号</button>
-                    <button className="btn btn--ghost btn--sm" onClick={handleLogout}>退出登录</button>
-                  </div>
-                </div>
-
-                {!loggedIn && (
+                {!loggedIn && !restoringSession && (
                   <div className="warn-item warn-item--warn">
                     <span className="warn-item__icon">⚠</span>
                     <span>Garmin 会话已过期，请重新登录后同步。
@@ -1270,24 +1406,10 @@ export default function App() {
                   </div>
                 )}
 
-                {viewModels.length > 0 && (
-                  <div className="sync-summary">
-                    <div className="sync-summary__row">
-                      <span className="sync-summary__label">待同步训练</span>
-                      <span className="sync-summary__val">{enabledVms.length} 个</span>
-                    </div>
-                    <div
-                      className={`sync-summary__row ${pendingCount > 0 ? 'sync-summary__row--warn sync-summary__row--clickable' : ''}`}
-                      onClick={pendingCount > 0 ? scrollToFirstPending : undefined}>
-                      <span className="sync-summary__label">需要确认</span>
-                      <span className="sync-summary__val">{pendingCount > 0 ? `${pendingCount} 个 →` : '0 个 ✓'}</span>
-                    </div>
-                    {nonRunningVms.length > 0 && (
-                      <div className="sync-summary__row sync-summary__row--info">
-                        <span className="sync-summary__label">非跑步训练</span>
-                        <span className="sync-summary__val" style={{ color: 'var(--tx-3)' }}>{nonRunningVms.length} 个（备注形式）</span>
-                      </div>
-                    )}
+                {nonRunningVms.length > 0 && (
+                  <div className="warn-item warn-item--info" style={{ fontSize: 11 }}>
+                    <span className="warn-item__icon">ℹ</span>
+                    {nonRunningVms.length} 个非跑步训练将以备注形式同步（不含步骤结构）
                   </div>
                 )}
 
