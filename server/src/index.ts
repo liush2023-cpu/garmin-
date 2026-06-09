@@ -132,6 +132,12 @@ app.post("/api/garmin/delete-workouts", async (req, res) => {
   }
 });
 
+// 退出登录（前端调用，后端无状态时直接返回 ok）
+app.post("/api/garmin/logout", (_req, res) => {
+  // garmin-connect 库无显式 logout 方法；前端已清理 localStorage
+  res.json({ ok: true });
+});
+
 // ── 静态文件托管 ─────────────────────────────────────────────────────────────
 
 // Serve the built frontend in production (single-service deployment).

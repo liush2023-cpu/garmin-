@@ -285,6 +285,9 @@ body { min-height: 100vh; }
   transition: border-color .12s, background .12s;
 }
 .status-badge--btn:hover { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.status-badge--expired { border-color: var(--warn-bd); color: var(--warn); }
+.status-badge--expired:hover { border-color: var(--warn); background: var(--warn-bg); }
+.status-badge__dot--expired { background: var(--warn); }
 
 /* ── Form fields ─────────────────────────────────────────────────────── */
 .field {
@@ -524,6 +527,72 @@ body { min-height: 100vh; }
   padding: 5px 8px;
 }
 
+/* ── Workout confirm flow ────────────────────────────────────────────── */
+
+/* Confirmed card: subtle green tint */
+.wo-card--confirmed { border-left: 3px solid var(--success); }
+
+/* Status badges (needs-confirm / confirmed) */
+.wo-card__status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wo-card__status-badge--pending {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid var(--warn-bd);
+}
+.wo-card__status-badge--confirmed {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+/* Confirm block (shown inside expanded card when pending) */
+.confirm-block {
+  border: 1px solid var(--warn-bd);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.confirm-block__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #92400e;
+}
+.confirm-block__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.5;
+}
+.confirm-block__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+/* Confirmed notice (shows after confirming) */
+.confirm-done {
+  font-size: 12px;
+  color: #15803d;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
 /* ── Type tag ────────────────────────────────────────────────────────── */
 .type-tag {
   display: inline-flex;
@@ -612,6 +681,8 @@ body { min-height: 100vh; }
 }
 .sync-summary__row:not(:last-child) { border-bottom: 1px solid var(--border); }
 .sync-summary__row--warn { background: var(--warn-bg); }
+.sync-summary__row--clickable { cursor: pointer; }
+.sync-summary__row--clickable:hover { filter: brightness(.97); }
 .sync-summary__label { color: var(--tx-3); }
 .sync-summary__val { font-weight: 600; color: var(--tx-1); }
 .sync-summary__row--warn .sync-summary__val { color: var(--warn); }

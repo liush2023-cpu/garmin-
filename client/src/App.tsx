@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type ChangeEvent } from 'react'
+import { useEffect, useState, useCallback, useRef, type ChangeEvent } from 'react'
 import type { TrainingPlan, PlannedWorkout, WorkoutStep, SyncResult, StepType } from './types'
 import './App.css'
 
@@ -11,9 +11,10 @@ const LLM_PRESETS = {
   custom:   { label: '自定义',    baseUrl: '',                                                     model: ''               },
 } as const
 
-const LLM_CONFIG_KEY     = 'garmin-trainer:llm-config'
-const GARMIN_SESSION_KEY = 'garmin-trainer:garmin-session'
-const SYNC_LOG_KEY       = 'garmin-trainer:sync-log'
+const LLM_CONFIG_KEY      = 'garmin-trainer:llm-config'
+const GARMIN_SESSION_KEY  = 'garmin-trainer:garmin-session'
+const GARMIN_ACCOUNT_KEY  = 'garmin.connectedAccount'   // 账号展示信息（无密码）
+const SYNC_LOG_KEY        = 'garmin-trainer:sync-log'
 
 const STEP_TYPE_LABELS: Record<StepType, string> = {
   warmup: '热身', interval: '间歇', recovery: '恢复', cooldown: '放松', easy: '轻松跑', rest: '休息',
@@ -58,9 +59,13 @@ const INT_CONFIG: Record<IntensityLevel, { label: string; dot: string }> = {
 
 // ── Storage ────────────────────────────────────────────────────────────────
 
-interface StoredLlmConfig { provider: keyof typeof LLM_PRESETS; baseUrl: string; apiKey: string; model: string }
+interface StoredLlmConfig    { provider: keyof typeof LLM_PRESETS; baseUrl: string; apiKey: string; model: string }
 interface StoredGarminSession { domain: 'garmin.cn' | 'garmin.com'; username: string; session: unknown }
-interface SyncLogEntry { workoutId: string; date: string; title: string; planName?: string; syncedAt: string }
+interface GarminAccount       { email: string; connectedAt: string }
+interface SyncLogEntry        { workoutId: string; date: string; title: string; planName?: string; syncedAt: string }
+
+// 训练确认状态：none = 无问题; pending = 待确认; confirmed = 用户已确认
+type ConfirmStatus = 'none' | 'pending' | 'confirmed'
 
 const ls = {
   get<T>(k: string): T | null {
@@ -451,17 +456,40 @@ export default function App() {
   const [parseError,  setParseError ] = useState<string | null>(null)
   const [plan,        setPlan       ] = useState<TrainingPlan | null>(null)
 
+  // 每个训练的确认状态：key=workout index, value=ConfirmStatus
+  const [confirmMap, setConfirmMap] = useState<Record<number, ConfirmStatus>>({})
+  // DOM refs for scrolling to a specific workout card
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
+
+  // 当 plan 变化时，重新计算哪些训练需要确认
+  useEffect(() => {
+    if (!plan) { setConfirmMap({}); return }
+    const m: Record<number, ConfirmStatus> = {}
+    plan.workouts.forEach((wo, i) => {
+      if (getWorkoutIssues(wo).length > 0) m[i] = 'pending'
+    })
+    setConfirmMap(m)
+  }, [plan])
+
+  function confirmWorkout(idx: number) {
+    setConfirmMap(prev => ({ ...prev, [idx]: 'confirmed' }))
+  }
+
   // ── Garmin ───────────────────────────────────────────────────
-  const savedGarmin = ls.get<StoredGarminSession>(GARMIN_SESSION_KEY)
-  const [gDomain,          setGDomain         ] = useState<'garmin.cn' | 'garmin.com'>(savedGarmin?.domain ?? 'garmin.cn')
-  const [gUsername,        setGUsername        ] = useState(savedGarmin?.username ?? '')
+  // 从 localStorage 立即恢复账号展示信息（无密码），避免页面加载闪烁
+  const savedAccount = ls.get<GarminAccount>(GARMIN_ACCOUNT_KEY)
+  const savedSession  = ls.get<StoredGarminSession>(GARMIN_SESSION_KEY)
+  const [garminAccount,    setGarminAccount   ] = useState<GarminAccount | null>(savedAccount)
+  const [gDomain,          setGDomain         ] = useState<'garmin.cn' | 'garmin.com'>(savedSession?.domain ?? 'garmin.cn')
+  const [gUsername,        setGUsername        ] = useState(savedSession?.username ?? savedAccount?.email ?? '')
   const [gPassword,        setGPassword        ] = useState('')
-  const [loggedIn,         setLoggedIn         ] = useState(false)
+  const [loggedIn,         setLoggedIn         ] = useState(!!savedAccount)  // 有账号缓存则立即显示已连接
   const [loggingIn,        setLoggingIn        ] = useState(false)
   const [loginError,       setLoginError       ] = useState<string | null>(null)
-  const [restoringSession, setRestoringSession ] = useState(!!savedGarmin)
+  const [restoringSession, setRestoringSession ] = useState(!!savedSession)
   const [showGarminForm,   setShowGarminForm   ] = useState(false)
 
+  // 尝试在后台恢复真实会话 token；如果失败只清 session，保留账号展示信息
   useEffect(() => {
     const saved = ls.get<StoredGarminSession>(GARMIN_SESSION_KEY)
     if (!saved?.session) { setRestoringSession(false); return }
@@ -471,8 +499,17 @@ export default function App() {
       body: JSON.stringify({ tokens: saved.session, domain: saved.domain }),
     })
       .then(r => r.json().then(d => ({ ok: r.ok, d })))
-      .then(({ ok }) => { if (!cancelled) { if (ok) setLoggedIn(true); else ls.del(GARMIN_SESSION_KEY) } })
-      .catch(() => { if (!cancelled) ls.del(GARMIN_SESSION_KEY) })
+      .then(({ ok }) => {
+        if (!cancelled) {
+          if (ok) setLoggedIn(true)
+          else {
+            // session 过期：清 session token，但保留账号展示信息让用户知道要重新登录
+            ls.del(GARMIN_SESSION_KEY)
+            setLoggedIn(false)
+          }
+        }
+      })
+      .catch(() => { if (!cancelled) { ls.del(GARMIN_SESSION_KEY); setLoggedIn(false) } })
       .finally(() => { if (!cancelled) setRestoringSession(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -488,12 +525,37 @@ export default function App() {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? '登录失败')
       setLoggedIn(true)
+      // 保存 session token
       if (d.session) ls.set(GARMIN_SESSION_KEY, { domain: gDomain, username: gUsername, session: d.session })
+      // 持久化账号展示信息（无密码）
+      const accountInfo: GarminAccount = { email: gUsername, connectedAt: new Date().toISOString() }
+      ls.set(GARMIN_ACCOUNT_KEY, accountInfo)
+      setGarminAccount(accountInfo)
       setGPassword(''); setShowGarminForm(false)
     } catch (e) { setLoginError(e instanceof Error ? e.message : String(e)) }
     finally { setLoggingIn(false) }
   }
-  function handleLogout() { setLoggedIn(false); ls.del(GARMIN_SESSION_KEY); setGPassword('') }
+
+  function handleLogout() {
+    setLoggedIn(false)
+    setGarminAccount(null)
+    ls.del(GARMIN_SESSION_KEY)
+    ls.del(GARMIN_ACCOUNT_KEY)
+    setGPassword('')
+    // 通知后端退出 Garmin 会话（忽略错误）
+    fetch('/api/garmin/logout', { method: 'POST' }).catch(() => {})
+  }
+
+  function handleSwitchAccount() {
+    // 清除旧账号缓存，打开登录表单
+    ls.del(GARMIN_SESSION_KEY)
+    ls.del(GARMIN_ACCOUNT_KEY)
+    setGarminAccount(null)
+    setLoggedIn(false)
+    setGUsername('')
+    setShowGarminForm(true)
+    fetch('/api/garmin/logout', { method: 'POST' }).catch(() => {})
+  }
 
   // ── Sync ─────────────────────────────────────────────────────
   const [syncing,     setSyncing    ] = useState(false)
@@ -505,6 +567,12 @@ export default function App() {
 
   async function handleSync() {
     if (!plan) return
+    // 防御校验：确保没有未确认的训练
+    const pendingCount = Object.values(confirmMap).filter(v => v === 'pending').length
+    if (pendingCount > 0) {
+      setSyncError(`请先确认 ${pendingCount} 个需要处理的训练（在中间面板点击展开后确认）`)
+      return
+    }
     setSyncing(true); setSyncError(null); setSyncResults(null); setUndoMsg(null); setUndoError(null)
     try {
       const r = await fetch('/api/sync', {
@@ -601,6 +669,19 @@ export default function App() {
   const totalDist      = plan ? plan.workouts.reduce((a, w) => a + workoutTotals(w).dist, 0) : 0
   const totalDur       = plan ? plan.workouts.reduce((a, w) => a + workoutTotals(w).dur, 0) : 0
   const problemCount   = plan ? plan.workouts.filter(wo => getWorkoutIssues(wo).length > 0).length : 0
+  // 当前仍处于 pending 状态（未确认）的训练数
+  const pendingCount   = Object.values(confirmMap).filter(v => v === 'pending').length
+
+  // 滚动到第一个待确认的训练卡片并展开
+  function scrollToFirstPending() {
+    const firstIdx = plan?.workouts.findIndex((_, i) => confirmMap[i] === 'pending') ?? -1
+    if (firstIdx < 0) return
+    setExpandedRow(firstIdx)
+    setMobileTab('results')
+    setTimeout(() => {
+      cardRefs.current[firstIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+  }
 
   const parseLabel = parseStatus === 'loading'
     ? (inputTab === 'vdot' ? 'AI 生成中…' : '解析中…')
@@ -669,10 +750,13 @@ export default function App() {
                 <span className="header-summary__item">约 {fmtDur(totalDur)}</span>
               </>
             )}
-            {problemCount > 0 && (
+            {pendingCount > 0 && (
               <>
                 <span className="header-summary__sep">·</span>
-                <span className="header-summary__item header-summary__item--warn">⚠ {problemCount} 个需确认</span>
+                <span className="header-summary__item header-summary__item--warn"
+                  style={{ cursor: 'pointer' }} onClick={scrollToFirstPending}>
+                  ⚠ {pendingCount} 个需确认
+                </span>
               </>
             )}
           </div>
@@ -681,12 +765,19 @@ export default function App() {
         {/* Right: garmin + settings */}
         <div className="app-header__right">
           {restoringSession ? (
-            <span className="status-badge"><span className="status-badge__dot" />恢复会话…</span>
-          ) : loggedIn ? (
-            <span className="status-badge">
+            <span className="status-badge"><span className="status-badge__dot" />验证会话…</span>
+          ) : (loggedIn && garminAccount) ? (
+            <span className="status-badge" title={`连接于 ${new Date(garminAccount.connectedAt).toLocaleString()}`}>
               <span className="status-badge__dot status-badge__dot--on" />
-              {gUsername}
+              {garminAccount.email}
             </span>
+          ) : garminAccount ? (
+            /* 有账号信息但 session 过期 */
+            <button className="status-badge status-badge--btn status-badge--expired"
+              onClick={() => { setShowGarminForm(true); setGUsername(garminAccount.email); setMobileTab('output') }}>
+              <span className="status-badge__dot status-badge__dot--expired" />
+              {garminAccount.email}（重新登录）
+            </button>
           ) : (
             <button className="status-badge status-badge--btn"
               onClick={() => { setShowGarminForm(true); setMobileTab('output') }}>
@@ -832,16 +923,21 @@ export default function App() {
               <div className="panel__body" style={{ padding: '8px 0' }}>
                 {plan.workouts.map((wo, wi) => {
                   const { dur, dist } = workoutTotals(wo)
-                  const cat     = classifyWorkout(wo)
-                  const catCfg  = CAT_CONFIG[cat]
-                  const intLvl  = getIntensity(cat)
-                  const intCfg  = INT_CONFIG[intLvl]
-                  const issues  = getWorkoutIssues(wo)
-                  const isRest  = wo.steps.length === 0
-                  const expanded = expandedRow === wi
+                  const cat        = classifyWorkout(wo)
+                  const catCfg     = CAT_CONFIG[cat]
+                  const intLvl     = getIntensity(cat)
+                  const intCfg     = INT_CONFIG[intLvl]
+                  const issues     = getWorkoutIssues(wo)
+                  const isRest     = wo.steps.length === 0
+                  const expanded   = expandedRow === wi
+                  const confirmSt  = confirmMap[wi] ?? 'none'
+                  const isPending  = confirmSt === 'pending'
+                  const isConfirmed = confirmSt === 'confirmed'
 
                   return (
-                    <div key={wi} className={`wo-card ${expanded ? 'wo-card--expanded' : ''} ${issues.length ? 'wo-card--warn' : ''}`}>
+                    <div key={wi}
+                      ref={el => { cardRefs.current[wi] = el }}
+                      className={`wo-card ${expanded ? 'wo-card--expanded' : ''} ${isPending ? 'wo-card--warn' : ''} ${isConfirmed ? 'wo-card--confirmed' : ''}`}>
                       {/* Card header row */}
                       <div className="wo-card__header" onClick={() => !isRest && setExpandedRow(expanded ? null : wi)}>
                         {/* Date */}
@@ -859,8 +955,11 @@ export default function App() {
                                 {catCfg.label}
                               </span>
                             )}
-                            {issues.length > 0 && (
-                              <span className="wo-card__issue-badge" title={issues.join('\n')}>需确认</span>
+                            {isPending && (
+                              <span className="wo-card__status-badge wo-card__status-badge--pending">⚠ 需确认</span>
+                            )}
+                            {isConfirmed && (
+                              <span className="wo-card__status-badge wo-card__status-badge--confirmed">✓ 已确认</span>
                             )}
                           </div>
                           {!isRest && (
@@ -890,6 +989,7 @@ export default function App() {
                       {/* Expanded detail */}
                       {expanded && !isRest && (
                         <div className="wo-card__detail">
+                          {/* Issue list */}
                           {issues.length > 0 && (
                             <div className="wo-card__issue-list">
                               {issues.map((iss, ii) => (
@@ -897,8 +997,38 @@ export default function App() {
                               ))}
                             </div>
                           )}
+
                           <WorkoutBar steps={wo.steps} height={12} showLegend />
                           <StepDetail steps={wo.steps} />
+
+                          {/* ── Confirm block (只在 pending 状态显示) ── */}
+                          {isPending && (
+                            <div className="confirm-block">
+                              <div className="confirm-block__title">需要确认</div>
+                              <div className="confirm-block__body">
+                                {issues.map((iss, ii) => <p key={ii}>• {iss}</p>)}
+                                <p>系统会将相关说明写入 Garmin notes。同步后 Garmin 中不会生成精确目标，只会显示备注。</p>
+                              </div>
+                              <div className="confirm-block__actions">
+                                <button className="btn btn--primary btn--sm" onClick={() => confirmWorkout(wi)}>
+                                  确认使用备注同步
+                                </button>
+                                <button className="btn btn--ghost btn--sm" onClick={() => {
+                                  setInputCollapsed(false)
+                                  setMobileTab('input')
+                                }}>
+                                  返回修改原文
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Already confirmed notice */}
+                          {isConfirmed && (
+                            <div className="confirm-done">
+                              ✓ 已确认使用备注同步
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -919,19 +1049,32 @@ export default function App() {
 
             {/* Connection status */}
             {restoringSession ? (
-              <p style={{ fontSize: 12, color: 'var(--tx-3)' }}>正在恢复 Garmin 会话…</p>
-            ) : loggedIn && !showGarminForm ? (
+              <p style={{ fontSize: 12, color: 'var(--tx-3)' }}>正在验证 Garmin 会话…</p>
+            ) : (loggedIn || garminAccount) && !showGarminForm ? (
               <>
                 <div className="sync-connect-row">
                   <span className="sync-connected-label">
-                    <span style={{ color: 'var(--success)', fontSize: 8 }}>●</span>
-                    已连接：{gUsername}
+                    <span style={{ color: loggedIn ? 'var(--success)' : 'var(--warn)', fontSize: 8 }}>●</span>
+                    {loggedIn ? `已连接：${garminAccount?.email ?? gUsername}` : `会话已过期：${garminAccount?.email}`}
                   </span>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn--ghost btn--sm" onClick={() => setShowGarminForm(true)}>切换账号</button>
+                    <button className="btn btn--ghost btn--sm" onClick={handleSwitchAccount}>切换账号</button>
                     <button className="btn btn--ghost btn--sm" onClick={handleLogout}>退出登录</button>
                   </div>
                 </div>
+
+                {/* 如果 session 过期，提示重新登录 */}
+                {!loggedIn && (
+                  <div className="warn-item warn-item--warn">
+                    <span className="warn-item__icon">⚠</span>
+                    <span>Garmin 会话已过期，请重新登录后同步。
+                      <button className="btn btn--ghost btn--sm" style={{ marginLeft: 8 }}
+                        onClick={() => { setShowGarminForm(true); setGUsername(garminAccount?.email ?? '') }}>
+                        重新登录
+                      </button>
+                    </span>
+                  </div>
+                )}
 
                 {/* Sync summary info */}
                 {plan && (
@@ -940,41 +1083,46 @@ export default function App() {
                       <span className="sync-summary__label">待同步训练</span>
                       <span className="sync-summary__val">{activeWorkouts.length} 个</span>
                     </div>
-                    {problemCount > 0 && (
-                      <div className="sync-summary__row sync-summary__row--warn">
-                        <span className="sync-summary__label">需要确认</span>
-                        <span className="sync-summary__val">{problemCount} 个</span>
-                      </div>
-                    )}
+                    {/* 只显示仍未确认的数量（pending），已确认的显示 0 */}
+                    <div
+                      className={`sync-summary__row ${pendingCount > 0 ? 'sync-summary__row--warn sync-summary__row--clickable' : ''}`}
+                      onClick={pendingCount > 0 ? scrollToFirstPending : undefined}
+                      title={pendingCount > 0 ? '点击跳转到第一个待确认训练' : undefined}>
+                      <span className="sync-summary__label">需要确认</span>
+                      <span className="sync-summary__val">{pendingCount > 0 ? `${pendingCount} 个 →` : '0 个 ✓'}</span>
+                    </div>
                   </div>
                 )}
 
-                {/* Big sync button */}
+                {/* Big sync button — disabled when pending */}
                 <button className="btn btn--primary btn--sync"
                   onClick={handleSync}
-                  disabled={syncing || !plan || activeWorkouts.length === 0}>
+                  disabled={syncing || !plan || activeWorkouts.length === 0 || !loggedIn || pendingCount > 0}>
                   {syncing ? (
                     <><span className="spin">⟳</span> 同步中…</>
+                  ) : pendingCount > 0 ? (
+                    `请先确认 ${pendingCount} 个训练`
                   ) : plan ? (
                     `同步 ${activeWorkouts.length} 个训练到 Garmin`
                   ) : (
                     '同步到 Garmin'
                   )}
                 </button>
+                {pendingCount > 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--warn)', marginTop: -4 }}>
+                    {pendingCount} 个训练需要确认后才能同步。
+                    <button className="btn--icon" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'underline' }}
+                      onClick={scrollToFirstPending}>点此跳转</button>
+                  </p>
+                )}
 
                 {/* Risk info */}
-                {plan && !syncResults && (
+                {plan && !syncResults && pendingCount === 0 && (
                   <div className="sync-risk">
                     <div className="sync-risk__item">
                       <span className="sync-risk__icon">ℹ</span>
                       将创建 {activeWorkouts.length} 个 Garmin 训练，不会覆盖已有训练
                     </div>
-                    {problemCount > 0 && (
-                      <div className="sync-risk__item sync-risk__item--warn">
-                        <span className="sync-risk__icon">⚠</span>
-                        {problemCount} 个训练有备注说明，请同步前在中间面板确认
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -1014,14 +1162,14 @@ export default function App() {
             ) : (
               /* Login form */
               <div className="sync-area gap-10">
-                {!loggedIn && (
+                {!garminAccount && (
                   <p style={{ fontSize: 12, color: 'var(--tx-3)', marginBottom: 4 }}>
                     登录 Garmin Connect 账号，一键同步课表到手表。
                   </p>
                 )}
-                {loggedIn && (
-                  <p style={{ fontSize: 12 }}>
-                    切换账号（当前：{gUsername}）
+                {garminAccount && (
+                  <p style={{ fontSize: 12, color: 'var(--tx-2)' }}>
+                    {loggedIn ? `切换账号（当前：${garminAccount.email}）` : `重新登录（${garminAccount.email}）`}
                     <a href="#" onClick={e => { e.preventDefault(); setShowGarminForm(false) }} style={{ marginLeft: 8 }}>取消</a>
                   </p>
                 )}
@@ -1058,21 +1206,28 @@ export default function App() {
                 <span className="section-title">训练预览</span>
                 <div className="sync-preview">
                   {activeWorkouts.map((wo, i) => {
+                    // activeWorkouts[i] 不等于 plan.workouts[i]（休息日已过滤），需要找回原始 index
+                    const wi = plan!.workouts.indexOf(wo)
                     const { dur, dist } = workoutTotals(wo)
-                    const issues = getWorkoutIssues(wo)
                     const cat = classifyWorkout(wo)
                     const catCfg = CAT_CONFIG[cat]
+                    const confirmSt = confirmMap[wi] ?? 'none'
+                    const syncResult = syncResults?.find(r => r.title === wo.title && r.date === wo.date)
                     return (
-                      <div key={i} className={`sync-preview-item ${issues.length ? 'sync-preview-item--warn' : ''}`}>
+                      <div key={i}
+                        className={`sync-preview-item ${confirmSt === 'pending' ? 'sync-preview-item--warn' : ''}`}
+                        onClick={() => { setExpandedRow(wi); setMobileTab('results'); setTimeout(() => cardRefs.current[wi]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }}
+                        style={{ cursor: 'pointer' }}>
                         <span className="sync-preview-date">{wo.date.slice(5)} {weekday(wo.date)}</span>
                         <span className="sync-preview-title">{wo.title}</span>
                         <span className="type-tag type-tag--xs" style={{ background: catCfg.bg, color: catCfg.color }}>{catCfg.label}</span>
                         <span className="sync-preview-stat">{fmtDist(dist)}</span>
                         <span className="sync-preview-stat">{fmtDur(dur)}</span>
-                        {issues.length > 0 && <span className="sync-preview-warn" title={issues.join('\n')}>⚠</span>}
-                        {syncResults && (
-                          <span className={`sync-preview-result ${syncResults.find(r => r.title === wo.title && r.date === wo.date)?.ok ? 'sync-preview-result--ok' : 'sync-preview-result--err'}`}>
-                            {syncResults.find(r => r.title === wo.title && r.date === wo.date)?.ok ? '✓' : '✕'}
+                        {confirmSt === 'pending'   && <span className="sync-preview-warn" title="需要确认">⚠</span>}
+                        {confirmSt === 'confirmed' && <span style={{ color: 'var(--success)', fontSize: 11 }}>✓</span>}
+                        {syncResult && (
+                          <span className={`sync-preview-result ${syncResult.ok ? 'sync-preview-result--ok' : 'sync-preview-result--err'}`}>
+                            {syncResult.ok ? '✓' : '✕'}
                           </span>
                         )}
                       </div>
