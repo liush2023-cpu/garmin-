@@ -20,10 +20,6 @@ const STEP_TYPE_LABELS: Record<StepType, string> = {
   warmup: '热身', interval: '间歇', recovery: '恢复', cooldown: '放松', easy: '轻松跑', rest: '休息',
 }
 
-const STEP_BAR_COLORS: Record<StepType, string> = {
-  warmup:   '#BFDBFE', interval: '#FCA5A5', recovery: '#BBF7D0',
-  cooldown: '#BFDBFE', easy:     '#BBF7D0', rest:     '#E5E7EB',
-}
 
 const VALID_STEP_TYPES = new Set<StepType>(['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest'])
 const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六']
