@@ -1,63 +1,47 @@
 /**
- * SQLite 缓存层 —— 避免频繁调用 Garmin API。
- *
- * 表结构：cache(key TEXT PK, data TEXT, fetched_at INTEGER)
- * 过期策略：set 时传入 TTL（毫秒），get 时检查是否过期。
+ * 内存缓存层（替代 better-sqlite3，避免 native 模块编译问题）。
+ * 进程重启后缓存清空，但对 Garmin API 速率限制已足够。
  */
 
-import Database from "better-sqlite3";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+interface CacheEntry {
+  data: unknown;
+  fetchedAt: number;
+}
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.resolve(__dirname, "../cache.db");
-
-const db = new Database(DB_PATH);
-
-// WAL 模式 —— 并发读性能更好
-db.pragma("journal_mode = WAL");
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS cache (
-    key        TEXT PRIMARY KEY,
-    data       TEXT NOT NULL,
-    fetched_at INTEGER NOT NULL
-  )
-`);
-
-const stmtGet = db.prepare("SELECT data, fetched_at FROM cache WHERE key = ?");
-const stmtSet = db.prepare("INSERT OR REPLACE INTO cache (key, data, fetched_at) VALUES (?, ?, ?)");
-const stmtDel = db.prepare("DELETE FROM cache WHERE key = ?");
-const stmtCleanup = db.prepare("DELETE FROM cache WHERE fetched_at < ?");
+const store = new Map<string, CacheEntry>();
 
 /** 获取缓存数据，过期返回 null */
 export function cacheGet<T>(key: string, ttlMs: number): T | null {
-  const row = stmtGet.get(key) as { data: string; fetched_at: number } | undefined;
-  if (!row) return null;
-  if (Date.now() - row.fetched_at > ttlMs) return null;
-  try {
-    return JSON.parse(row.data) as T;
-  } catch {
+  const entry = store.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > ttlMs) {
+    store.delete(key);
     return null;
   }
+  return entry.data as T;
 }
 
 /** 写入缓存 */
 export function cacheSet(key: string, data: unknown): void {
-  stmtSet.run(key, JSON.stringify(data), Date.now());
+  store.set(key, { data, fetchedAt: Date.now() });
 }
 
 /** 删除缓存 */
 export function cacheDel(key: string): void {
-  stmtDel.run(key);
+  store.delete(key);
 }
 
-/** 清理所有过期条目 */
+/** 清理所有过期条目（超过 7 天） */
 export function cacheCleanup(): number {
-  // 清理超过 7 天的所有条目
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const result = stmtCleanup.run(cutoff);
-  return result.changes;
+  let count = 0;
+  for (const [key, entry] of store) {
+    if (entry.fetchedAt < cutoff) {
+      store.delete(key);
+      count++;
+    }
+  }
+  return count;
 }
 
 // ── 缓存 TTL 常量（毫秒）────────────────────────────────────────────────────
