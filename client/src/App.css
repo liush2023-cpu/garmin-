@@ -304,9 +304,58 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 12px; line-hei
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
-  margin-top: 10px;
 }
 .sync-area--disabled { opacity: .55; pointer-events: none; }
+
+/* Connection status row */
+.sync-connect-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--success-bg);
+  border: 1px solid rgba(22,163,74,.2);
+  border-radius: var(--radius);
+  gap: 8px;
+}
+.sync-connected-label {
+  font-size: 12px; font-weight: 500; color: var(--tx-2);
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* Big sync button (P0-1, P2-1) */
+.btn--sync {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  letter-spacing: -0.01em;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spin .8s linear infinite; }
+
+/* Training preview (P0-1) */
+.sync-preview { display: flex; flex-direction: column; gap: 6px; }
+.sync-preview-item {
+  padding: 8px 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.sync-preview-meta {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px;
+}
+.sync-preview-date {
+  font-size: 11px; font-weight: 600; color: var(--tx-3); white-space: nowrap;
+}
+.sync-preview-title {
+  font-size: 12px; font-weight: 500; color: var(--tx); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sync-preview-stats {
+  display: flex; gap: 5px; font-size: 11px; color: var(--tx-3);
+  font-family: var(--mono); margin-bottom: 4px;
+}
+.sync-results { display: flex; flex-direction: column; gap: 6px; }
 
 /* ── Mobile tabs ─────────────────────────────────────────────── */
 .mobile-tabs { display: none; }
@@ -330,6 +379,50 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 12px; line-hei
   .mobile-tab--active { color: var(--accent); border-bottom-color: var(--accent); }
   .hr-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Settings modal (P0-4) ──────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--bg);
+  border-radius: var(--radius);
+  width: min(400px, 100%);
+  box-shadow: 0 12px 40px rgba(0,0,0,.22);
+  overflow: hidden;
+}
+.modal-card__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-card__body {
+  padding: 16px;
+}
+
+/* ── Header: clickable Garmin badge (P0-3) ───────────────────── */
+.status-badge--btn {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-family: var(--sans);
+  transition: border-color .12s, background .12s;
+}
+.status-badge--btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.status-badge--btn:hover .status-badge__dot {
+  background: var(--accent);
+}
+
+/* ── Header: settings warning state ─────────────────────────── */
+.btn--warn { color: var(--warn); border-color: var(--warn-border); }
 
 /* ── Plan stats strip ────────────────────────────────────────── */
 .plan-stats {

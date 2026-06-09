@@ -140,8 +140,24 @@ async function callLlmForPlan(systemPrompt: string, userMessage: string, config:
   return JSON.parse(jsonStr) as TrainingPlan;
 }
 
+const WEEKDAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/** 返回 today 之后最近的周一（若 today 本身是周一则返回今天） */
+function nextOrSameMonday(today: string): string {
+  const d = new Date(today + 'T00:00:00');
+  const day = d.getDay(); // 0=Sun,1=Mon,...6=Sat
+  const daysToMon = day === 1 ? 0 : day === 0 ? 1 : 8 - day;
+  d.setDate(d.getDate() + daysToMon);
+  return d.toISOString().slice(0, 10);
+}
+
 export async function parsePlanText(planText: string, config: LlmConfig, today: string): Promise<TrainingPlan> {
-  return callLlmForPlan(SYSTEM_PROMPT, `今天的日期是 ${today}。请解析以下训练计划文本：\n\n${planText}`, config);
+  const todayWeekday = WEEKDAY_ZH[new Date(today + 'T00:00:00').getDay()];
+  const planMonday   = nextOrSameMonday(today);
+  const ctx = `今天的日期是 ${today}（${todayWeekday}）。` +
+    `若计划按"周一/周三/…"排列，请以 ${planMonday}（周一）为本周起点，将各训练日映射到对应的准确日期（如周三 = ${planMonday} 后第 2 天，周日 = 后第 6 天），不要偏移。` +
+    `请解析以下训练计划文本：\n\n${planText}`;
+  return callLlmForPlan(SYSTEM_PROMPT, ctx, config);
 }
 
 // --- 按 VDOT / 训练目的直接生成课表 ---------------------------------------
@@ -221,14 +237,16 @@ export interface GenerateWeekPlanParams {
 export type GeneratePlanParams = GenerateSingleWorkoutParams | GenerateWeekPlanParams;
 
 export async function generatePlan(params: GeneratePlanParams, config: LlmConfig, today: string): Promise<TrainingPlan> {
+  const todayWeekday = WEEKDAY_ZH[new Date(today + "T00:00:00").getDay()];
+  const planMonday   = nextOrSameMonday(today);
   const userMessage =
     params.mode === "single"
-      ? `今天的日期是 ${today}。我当前的跑力 VDOT 约为 ${params.vdot}。
+      ? `今天的日期是 ${today}（${todayWeekday}）。我当前的跑力 VDOT 约为 ${params.vdot}。
 请为我生成一份"单次训练课表"，训练目的是：${GOAL_LABELS[params.goal]}。
 日期请填今天（${today}）。`
-      : `今天的日期是 ${today}。我当前的跑力 VDOT 约为 ${params.vdot}，
-每周可训练 ${params.daysPerWeek} 天，目前每周跑量约为 ${params.weeklyDistanceKm} 公里。
-请为我生成一份完整的"一周训练计划"（从今天开始的 7 天），包含训练日和休息日安排，
+      : `今天的日期是 ${today}（${todayWeekday}）。本周的周一为 ${planMonday}，请以此为起点安排 7 天日期（周一=${planMonday}，周二=${planMonday} 后+1天，以此类推）。
+我当前的跑力 VDOT 约为 ${params.vdot}，每周可训练 ${params.daysPerWeek} 天，目前每周跑量约为 ${params.weeklyDistanceKm} 公里。
+请为我生成一份完整的"一周训练计划"（从 ${planMonday} 开始的 7 天），包含训练日和休息日安排，
 每个训练日对应一份具体课表，整体符合 Jack Daniels 训练理论。`;
 
   return callLlmForPlan(GENERATE_SYSTEM_PROMPT, userMessage, config);
