@@ -331,6 +331,51 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 12px; line-hei
   .hr-grid { grid-template-columns: 1fr; }
 }
 
+/* ── Plan stats strip ────────────────────────────────────────── */
+.plan-stats {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+.plan-stats__sep { color: var(--border-mid); }
+
+/* ── VDOT pace reference card ────────────────────────────────── */
+.vdot-paces {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-size: 11px;
+}
+.vdot-pace-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.vdot-pace-row:last-child { border-bottom: none; }
+.vdot-pace-row:hover { background: var(--bg-subtle); }
+.vdot-pace-label {
+  font-weight: 700;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.vdot-pace-range {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.vdot-pace-desc {
+  font-size: 10px;
+  color: var(--tx-4);
+  white-space: nowrap;
+}
+
 /* ── Utilities ───────────────────────────────────────────────── */
 .divider { height: 1px; background: var(--border); margin: 10px 0; }
 .gap-6  { display: flex; flex-direction: column; gap: 6px; }

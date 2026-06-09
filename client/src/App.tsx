@@ -18,6 +18,34 @@ const SYNC_LOG_KEY      = 'garmin-trainer:sync-log'
 const STEP_TYPE_LABELS: Record<StepType, string> = {
   warmup: '热身', interval: '间歇', recovery: '恢复', cooldown: '放松', easy: '轻松跑', rest: '休息',
 }
+
+// Step type → bar color (matches badge palette)
+const STEP_BAR_COLORS: Record<StepType, string> = {
+  warmup:   '#BFDBFE',
+  interval: '#FCA5A5',
+  recovery: '#A7F3D0',
+  cooldown: '#C7D2FE',
+  easy:     '#E5E7EB',
+  rest:     '#F3F4F6',
+}
+
+// Render a horizontal timeline bar for a workout's steps
+function WorkoutBar({ steps, height = 7 }: { steps: import('./types').WorkoutStep[]; height?: number }) {
+  const segs = steps.map(s => {
+    const m = s.repeat && s.repeat > 1 ? s.repeat : 1
+    return { type: s.type, w: (s.durationSeconds ?? s.distanceMeters ?? 60) * m }
+  })
+  const total = segs.reduce((a, b) => a + b.w, 0)
+  if (!total) return null
+  return (
+    <div style={{ display: 'flex', height, borderRadius: 3, overflow: 'hidden', gap: 1, marginTop: 4 }}>
+      {segs.map((seg, i) => (
+        <div key={i} title={STEP_TYPE_LABELS[seg.type]}
+          style={{ flex: seg.w / total, background: STEP_BAR_COLORS[seg.type], minWidth: 3 }} />
+      ))}
+    </div>
+  )
+}
 const VALID_STEP_TYPES = new Set<StepType>(['warmup','interval','recovery','cooldown','easy','rest'])
 
 const WEEKDAY = ['日','一','二','三','四','五','六']
@@ -88,6 +116,34 @@ function estimateVdot(distM: number, timeMin: number): number | null {
   const pct  = 0.8 + 0.1894393 * Math.exp(-0.012778 * timeMin) + 0.2989558 * Math.exp(-0.1932605 * timeMin)
   const vdot = vo2 / pct
   return Number.isFinite(vdot) && vdot > 0 ? vdot : null
+}
+
+// Jack Daniels training paces derived from VDOT
+// Solves VO2 = -4.6 + 0.182258v + 0.000104v² for v, given VO2 = pct*VDOT
+function vdotToPaces(vdot: number): { label: string; range: string; color: string; desc: string }[] {
+  function velFromPct(pct: number): number {
+    const vo2 = pct * vdot
+    const a = 0.000104, b = 0.182258, c = -4.6 - vo2
+    return (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a) // m/min
+  }
+  function fmtPace(vMpmin: number): string {
+    const secPerKm = 60000 / vMpmin
+    const m = Math.floor(secPerKm / 60)
+    const s = Math.round(secPerKm % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+  const zones: { label: string; pcts: [number, number]; color: string; desc: string }[] = [
+    { label: 'E',  pcts: [0.65, 0.74], color: '#2196F3', desc: '轻松跑 · 心率 1-2 区' },
+    { label: 'M',  pcts: [0.75, 0.84], color: '#4CAF50', desc: '马拉松配速 · 心率 3 区' },
+    { label: 'T',  pcts: [0.88, 0.92], color: '#FF9800', desc: '乳酸阈值 · 心率 4 区' },
+    { label: 'I',  pcts: [0.95, 1.00], color: '#E8590C', desc: '间歇 · 心率 4-5 区' },
+    { label: 'R',  pcts: [1.05, 1.10], color: '#9C27B0', desc: '重复冲刺 · 无氧' },
+  ]
+  return zones.map(z => {
+    const vSlow = velFromPct(z.pcts[0])  // slower %VO2max → slower speed → slower pace
+    const vFast = velFromPct(z.pcts[1])  // higher %VO2max → faster speed → faster pace
+    return { label: z.label, range: `${fmtPace(vFast)}–${fmtPace(vSlow)}/km`, color: z.color, desc: z.desc }
+  })
 }
 
 const RACE_PRESETS = {
@@ -621,9 +677,20 @@ export default function App() {
                   </div>
                   <button className="btn btn--secondary btn--sm" onClick={handleEstimate}>估算 VDOT</button>
                   {vdotResult !== null && (
-                    <p style={{ fontSize: 12, color: 'var(--success)' }}>
-                      VDOT ≈ <strong>{vdotResult.toFixed(1)}</strong> — 已填入下方
-                    </p>
+                    <>
+                      <p style={{ fontSize: 12, color: 'var(--success)', marginBottom: 8 }}>
+                        VDOT ≈ <strong>{vdotResult.toFixed(1)}</strong> — 已填入下方
+                      </p>
+                      <div className="vdot-paces">
+                        {vdotToPaces(vdotResult).map(z => (
+                          <div key={z.label} className="vdot-pace-row">
+                            <span className="vdot-pace-label" style={{ color: z.color }}>{z.label}</span>
+                            <span className="vdot-pace-range">{z.range}</span>
+                            <span className="vdot-pace-desc">{z.desc}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
 
@@ -705,7 +772,15 @@ export default function App() {
         <div className={`panel ${mobileTab === 'results' ? 'panel--active' : ''}`} style={{ background: 'var(--bg-subtle)' }}>
           <div className="panel__header">
             <span className="fw-6" style={{ fontSize: 13 }}>解析结果</span>
-            {plan && <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>{plan.name}</span>}
+            {plan && (
+              <div className="plan-stats">
+                <span>{plan.workouts.filter(w => w.steps.length > 0).length} 训练日</span>
+                <span className="plan-stats__sep">·</span>
+                <span>{fmtDist(plan.workouts.reduce((a, w) => a + workoutTotals(w).dist, 0))}</span>
+                <span className="plan-stats__sep">·</span>
+                <span>{fmtDur(plan.workouts.reduce((a, w) => a + workoutTotals(w).dur, 0))}</span>
+              </div>
+            )}
           </div>
 
           {!plan ? (
@@ -760,10 +835,14 @@ export default function App() {
                             <div className="cell-day">{weekday(wo.date)}</div>
                           </td>
                           <td>
-                            {isRest
-                              ? <span style={{ color: 'var(--tx-4)', fontStyle: 'italic', fontSize: 12 }}>休息日</span>
-                              : <span className="cell-title">{wo.title}</span>
-                            }
+                            {isRest ? (
+                              <span style={{ color: 'var(--tx-4)', fontStyle: 'italic', fontSize: 12 }}>休息日</span>
+                            ) : (
+                              <>
+                                <span className="cell-title">{wo.title}</span>
+                                <WorkoutBar steps={wo.steps} />
+                              </>
+                            )}
                           </td>
                           <td className="cell-mono">{fmtDur(dur)}</td>
                           <td className="cell-mono">{fmtDist(dist)}</td>
@@ -779,7 +858,8 @@ export default function App() {
                           <tr key={`detail-${wi}`}>
                             <td colSpan={5} style={{ padding: 0 }}>
                               <div className="steps-detail">
-                                <table>
+                                <WorkoutBar steps={wo.steps} height={14} />
+                                <table style={{ marginTop: 10 }}>
                                   <thead>
                                     <tr>
                                       <th>类型</th>
