@@ -11,42 +11,77 @@ const LLM_PRESETS = {
   custom:   { label: '自定义',    baseUrl: '',                                                     model: ''               },
 } as const
 
-const LLM_CONFIG_KEY      = 'garmin-trainer:llm-config'
-const GARMIN_SESSION_KEY  = 'garmin-trainer:garmin-session'
-const GARMIN_ACCOUNT_KEY  = 'garmin.connectedAccount'   // 账号展示信息（无密码）
-const SYNC_LOG_KEY        = 'garmin-trainer:sync-log'
+const LLM_CONFIG_KEY     = 'garmin-trainer:llm-config'
+const GARMIN_SESSION_KEY = 'garmin-trainer:garmin-session'
+const GARMIN_ACCOUNT_KEY = 'garmin.connectedAccount'
+const SYNC_LOG_KEY       = 'garmin-trainer:sync-log'
 
 const STEP_TYPE_LABELS: Record<StepType, string> = {
   warmup: '热身', interval: '间歇', recovery: '恢复', cooldown: '放松', easy: '轻松跑', rest: '休息',
 }
 
-// Semantic bar colors: gray=rest, green=easy/recovery, blue=aerobic, red=high-intensity
 const STEP_BAR_COLORS: Record<StepType, string> = {
-  warmup:   '#BFDBFE',   // blue  – aerobic
-  interval: '#FCA5A5',   // red   – high intensity
-  recovery: '#BBF7D0',   // green – recovery
-  cooldown: '#BFDBFE',   // blue  – aerobic
-  easy:     '#BBF7D0',   // green – easy
-  rest:     '#E5E7EB',   // gray  – rest
+  warmup:   '#BFDBFE', interval: '#FCA5A5', recovery: '#BBF7D0',
+  cooldown: '#BFDBFE', easy:     '#BBF7D0', rest:     '#E5E7EB',
 }
 
 const VALID_STEP_TYPES = new Set<StepType>(['warmup', 'interval', 'recovery', 'cooldown', 'easy', 'rest'])
 const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六']
 
-// ── Workout classification ─────────────────────────────────────────────────
+// ── Sport types ────────────────────────────────────────────────────────────
 
-type WorkoutCategory = 'rest' | 'easy' | 'aerobic' | 'lsd' | 'threshold' | 'speed' | 'strength' | 'core'
+type SportType =
+  | 'running' | 'strength' | 'core' | 'cycling'
+  | 'swimming' | 'yoga' | 'mobility' | 'cross_training'
+  | 'rest' | 'other'
+
+const SPORT_CONFIG: Record<SportType, { label: string; color: string; bg: string; garminSupport: 'full' | 'notes' | 'none' }> = {
+  running:       { label: '跑步',        color: '#1D4ED8', bg: '#DBEAFE', garminSupport: 'full'  },
+  strength:      { label: '力量',        color: '#374151', bg: '#F3F4F6', garminSupport: 'notes' },
+  core:          { label: '核心',        color: '#92400E', bg: '#FEF3C7', garminSupport: 'notes' },
+  cycling:       { label: '骑行',        color: '#5B21B6', bg: '#EDE9FE', garminSupport: 'notes' },
+  swimming:      { label: '游泳',        color: '#0E7490', bg: '#CFFAFE', garminSupport: 'notes' },
+  yoga:          { label: '瑜伽',        color: '#6D28D9', bg: '#EDE9FE', garminSupport: 'notes' },
+  mobility:      { label: '拉伸/灵活性', color: '#047857', bg: '#D1FAE5', garminSupport: 'notes' },
+  cross_training:{ label: '交叉训练',   color: '#B45309', bg: '#FEF3C7', garminSupport: 'notes' },
+  rest:          { label: '休息',        color: '#9CA3AF', bg: '#F9FAFB', garminSupport: 'none'  },
+  other:         { label: '其他',        color: '#6B7280', bg: '#F3F4F6', garminSupport: 'notes' },
+}
+
+const SPORT_TYPE_OPTIONS = Object.entries(SPORT_CONFIG).map(([k, v]) => ({ value: k as SportType, label: v.label }))
+
+function detectSportType(wo: PlannedWorkout): { type: SportType; uncertain: boolean } {
+  if (wo.steps.length === 0) return { type: 'rest', uncertain: false }
+  const text = (wo.title + ' ' + wo.steps.map(s => (s.notes ?? '') + (s.type ?? '')).join(' ')).toLowerCase()
+
+  if (/力量|臀腿|上肢|下肢|深蹲|硬拉|卧推|箭步蹲|提踵|举重|哑铃|杠铃/.test(text)) return { type: 'strength', uncertain: false }
+  if (/核心|平板支撑|卷腹|俄罗斯转体|死虫|仰卧起坐/.test(text)) return { type: 'core', uncertain: false }
+  if (/瑜伽|普拉提/.test(text)) return { type: 'yoga', uncertain: false }
+  if (/拉伸|放松操|灵活性|活动度|筋膜放松|foam roll/.test(text)) return { type: 'mobility', uncertain: false }
+  if (/骑行|单车|骑车|cycling|bike/.test(text)) return { type: 'cycling', uncertain: false }
+  if (/游泳|泳池|自由泳|蛙泳|swim/.test(text)) return { type: 'swimming', uncertain: false }
+  if (/椭圆机|划船机|交叉训练|cross.?train/.test(text)) return { type: 'cross_training', uncertain: false }
+  if (/休息日|完全休息|rest day/.test(text)) return { type: 'rest', uncertain: false }
+  // Running signals
+  if (/跑|run|interval|tempo|速度|有氧|阈值|配速|长距/.test(text)) return { type: 'running', uncertain: false }
+  if (wo.steps.some(s => s.targetPace || s.type === 'interval' || s.type === 'warmup')) return { type: 'running', uncertain: false }
+  // No clear signal
+  return { type: 'other', uncertain: true }
+}
+
+// ── Workout classification (for running) ───────────────────────────────────
+
+type WorkoutCategory = 'rest' | 'easy' | 'aerobic' | 'lsd' | 'threshold' | 'speed' | 'other'
 type IntensityLevel  = 'rest' | 'recovery' | 'easy' | 'moderate' | 'hard'
 
 const CAT_CONFIG: Record<WorkoutCategory, { label: string; color: string; bg: string }> = {
-  rest:      { label: '休息日',   color: '#9CA3AF', bg: '#F9FAFB' },
-  easy:      { label: '轻松跑',   color: '#15803D', bg: '#DCFCE7' },
-  aerobic:   { label: '有氧跑',   color: '#1D4ED8', bg: '#DBEAFE' },
-  lsd:       { label: '长距离',   color: '#6D28D9', bg: '#EDE9FE' },
-  threshold: { label: '阈值跑',   color: '#B91C1C', bg: '#FEE2E2' },
-  speed:     { label: '速度跑',   color: '#C2410C', bg: '#FFEDD5' },
-  strength:  { label: '力量训练', color: '#374151', bg: '#F3F4F6' },
-  core:      { label: '核心训练', color: '#92400E', bg: '#FEF3C7' },
+  rest:      { label: '休息日', color: '#9CA3AF', bg: '#F9FAFB' },
+  easy:      { label: '轻松跑', color: '#15803D', bg: '#DCFCE7' },
+  aerobic:   { label: '有氧跑', color: '#1D4ED8', bg: '#DBEAFE' },
+  lsd:       { label: '长距离', color: '#6D28D9', bg: '#EDE9FE' },
+  threshold: { label: '阈值跑', color: '#B91C1C', bg: '#FEE2E2' },
+  speed:     { label: '速度跑', color: '#C2410C', bg: '#FFEDD5' },
+  other:     { label: '训练',   color: '#6B7280', bg: '#F3F4F6' },
 }
 
 const INT_CONFIG: Record<IntensityLevel, { label: string; dot: string }> = {
@@ -57,15 +92,100 @@ const INT_CONFIG: Record<IntensityLevel, { label: string; dot: string }> = {
   hard:     { label: '高强度', dot: '#EF4444' },
 }
 
+function classifyRunningWorkout(wo: PlannedWorkout): WorkoutCategory {
+  const text = (wo.title + ' ' + wo.steps.map(s => s.notes ?? '').join(' ')).toLowerCase()
+  if (/长距|lsd|long.?run/.test(text)) return 'lsd'
+  if (/阈值|tempo|threshold/.test(text)) return 'threshold'
+  if (/间歇|interval|速度|speed/.test(text)) return 'speed'
+  if (/有氧|aerobic|节奏/.test(text)) return 'aerobic'
+  if (/轻松|easy|慢跑|恢复/.test(text)) return 'easy'
+  if (wo.steps.some(s => s.type === 'interval')) return 'threshold'
+  const { dist } = workoutTotals(wo)
+  if (dist >= 15000) return 'lsd'
+  if (dist >= 8000)  return 'aerobic'
+  return 'easy'
+}
+
+function getIntensity(cat: WorkoutCategory): IntensityLevel {
+  if (cat === 'rest')  return 'rest'
+  if (cat === 'easy')  return 'easy'
+  if (cat === 'aerobic' || cat === 'lsd') return 'moderate'
+  if (cat === 'threshold' || cat === 'speed') return 'hard'
+  return 'moderate'
+}
+
+// ── ViewModel ──────────────────────────────────────────────────────────────
+
+type ConfirmStatus = 'none' | 'pending' | 'confirmed'
+
+interface WorkoutViewModel {
+  // editable core data
+  date:          string
+  title:         string
+  sportType:     SportType
+  category:      WorkoutCategory
+  steps:         WorkoutStep[]
+  notes:         string
+  // sync control
+  enabledForSync: boolean
+  confirmStatus:  ConfirmStatus
+  confirmIssues:  string[]
+  // back-reference
+  originalIdx:   number
+}
+
+function getConfirmIssues(wo: PlannedWorkout, sportType: SportType, uncertain: boolean): string[] {
+  const issues: string[] = []
+  if (uncertain || sportType === 'other') issues.push('运动类型识别不确定，请手动选择')
+  if (sportType !== 'running' && wo.steps.some(s => s.targetPace))
+    issues.push('非跑步训练中包含跑步配速目标，可能识别错误')
+  if (sportType === 'running') {
+    if (wo.steps.some(s => s.type === 'interval') && !wo.steps.some(s => s.type === 'recovery'))
+      issues.push('包含间歇但缺少恢复步骤')
+    const noTarget = wo.steps.filter(s => !s.targetPace && !s.targetHeartRate && s.type !== 'rest' && s.type !== 'easy')
+    if (noTarget.length) issues.push(`${noTarget.length} 个步骤缺少配速/心率目标，将写入 Garmin notes`)
+  }
+  return issues
+}
+
+function buildViewModel(wo: PlannedWorkout, idx: number): WorkoutViewModel {
+  const { type: sportType, uncertain } = detectSportType(wo)
+  const category = sportType === 'running' ? classifyRunningWorkout(wo) : (wo.steps.length === 0 ? 'rest' : 'other')
+  const confirmIssues = getConfirmIssues(wo, sportType, uncertain)
+  return {
+    date:           wo.date,
+    title:          wo.title,
+    sportType,
+    category,
+    steps:          wo.steps,
+    notes:          '',
+    enabledForSync: sportType !== 'rest',  // non-rest default on; non-running still on but user can toggle
+    confirmStatus:  confirmIssues.length > 0 ? 'pending' : 'none',
+    confirmIssues,
+    originalIdx:    idx,
+  }
+}
+
+// Convert a ViewModel back to PlannedWorkout for the sync API
+function vmToPlannedWorkout(vm: WorkoutViewModel): PlannedWorkout {
+  if (vm.sportType === 'running') {
+    return { date: vm.date, title: vm.title, steps: vm.steps }
+  }
+  // Non-running: send as a single easy step with notes
+  const notesText = [vm.notes, ...vm.steps.map(s => s.notes).filter(Boolean)].filter(Boolean).join(' | ')
+  return {
+    date:  vm.date,
+    title: vm.title,
+    steps: [{ type: 'easy', durationSeconds: 1800, notes: `[${SPORT_CONFIG[vm.sportType].label}] ${notesText || vm.title}` }],
+  }
+}
+
 // ── Storage ────────────────────────────────────────────────────────────────
 
 interface StoredLlmConfig    { provider: keyof typeof LLM_PRESETS; baseUrl: string; apiKey: string; model: string }
 interface StoredGarminSession { domain: 'garmin.cn' | 'garmin.com'; username: string; session: unknown }
-interface GarminAccount       { email: string; connectedAt: string }
-interface SyncLogEntry        { workoutId: string; date: string; title: string; planName?: string; syncedAt: string }
-
-// 训练确认状态：none = 无问题; pending = 待确认; confirmed = 用户已确认
-type ConfirmStatus = 'none' | 'pending' | 'confirmed'
+interface GarminAccount      { email: string; connectedAt: string }
+interface SyncLogEntry       { workoutId: string; date: string; title: string; planName?: string; syncedAt: string }
 
 const ls = {
   get<T>(k: string): T | null {
@@ -93,7 +213,7 @@ function estimateVdot(distM: number, timeMin: number): number | null {
   if (distM <= 0 || timeMin <= 0) return null
   const v = distM / timeMin
   const vo2 = -4.6 + 0.182258 * v + 0.000104 * v * v
-  const pct = 0.8 + 0.1894393 * Math.exp(-0.012778 * timeMin) + 0.2989558 * Math.exp(-0.1932605 * timeMin)
+  const pct  = 0.8 + 0.1894393 * Math.exp(-0.012778 * timeMin) + 0.2989558 * Math.exp(-0.1932605 * timeMin)
   const vdot = vo2 / pct
   return Number.isFinite(vdot) && vdot > 0 ? vdot : null
 }
@@ -163,14 +283,12 @@ function estimateStepDur(s: WorkoutStep): number {
       const spk = parsePaceToSecPerKm(s.targetPace)
       if (spk) return Math.round(s.distanceMeters / 1000 * spk)
     }
-    return Math.round(s.distanceMeters / 1000 * 360) // fallback 6min/km
+    return Math.round(s.distanceMeters / 1000 * 360)
   }
   return 0
 }
 
-// ── Totals ────────────────────────────────────────────────────────────────
-
-function workoutTotals(w: PlannedWorkout) {
+function workoutTotals(w: { steps: WorkoutStep[] }) {
   let dur = 0, dist = 0
   for (const s of w.steps) {
     const m = s.repeat && s.repeat > 1 ? s.repeat : 1
@@ -190,102 +308,35 @@ function weekday(date: string): string {
   try { return `周${WEEKDAY[new Date(date + 'T00:00:00').getDay()]}` } catch { return '' }
 }
 
-// ── Workout classification ─────────────────────────────────────────────────
-
-function classifyWorkout(wo: PlannedWorkout): WorkoutCategory {
-  if (wo.steps.length === 0) return 'rest'
-  const text = (wo.title + ' ' + wo.steps.map(s => s.notes ?? '').join(' ')).toLowerCase()
-  if (/力量|举重|gym/.test(text)) return 'strength'
-  if (/核心|core|plank/.test(text)) return 'core'
-  if (/长距|lsd|long.?run/.test(text)) return 'lsd'
-  if (/阈值|tempo|threshold/.test(text)) return 'threshold'
-  if (/间歇|interval|速度|speed/.test(text)) return 'speed'
-  if (/恢复|recovery/.test(text)) return 'easy'
-  if (/有氧|aerobic|节奏/.test(text)) return 'aerobic'
-  if (/轻松|easy|慢跑/.test(text)) return 'easy'
-  const hasInterval = wo.steps.some(s => s.type === 'interval')
-  if (hasInterval) return 'threshold'
-  const { dist } = workoutTotals(wo)
-  if (dist >= 15000) return 'lsd'
-  if (dist >= 8000)  return 'aerobic'
-  return 'easy'
-}
-
-function getIntensity(cat: WorkoutCategory): IntensityLevel {
-  if (cat === 'rest') return 'rest'
-  if (cat === 'easy') return 'easy'
-  if (cat === 'aerobic' || cat === 'lsd') return 'moderate'
-  if (cat === 'threshold' || cat === 'speed') return 'hard'
-  return 'moderate'
-}
-
-function getWorkoutIssues(wo: PlannedWorkout): string[] {
-  const issues: string[] = []
-  if (wo.steps.some(s => s.type === 'interval') && !wo.steps.some(s => s.type === 'recovery'))
-    issues.push('包含间歇但缺少恢复步骤')
-  const noTarget = wo.steps.filter(s => !s.targetPace && !s.targetHeartRate && s.type !== 'rest')
-  if (noTarget.length) issues.push(`${noTarget.length} 个步骤缺少配速/心率目标`)
-  return issues
-}
-
 // ── Warnings ──────────────────────────────────────────────────────────────
 
 interface Warning { level: 'info' | 'warn' | 'error'; msg: string }
+
+interface HrZones { z1: string; z2: string; z3: string; z4: string; z5: string }
+const DEFAULT_HR: HrZones = { z1: '110-130', z2: '130-150', z3: '150-165', z4: '165-178', z5: '178-190' }
 
 function computeWarnings(plan: TrainingPlan, hrZones: HrZones): Warning[] {
   const w: Warning[] = []
   const hrEmpty = !Object.values(hrZones).some(v => v.trim())
   if (plan.workouts.some(wo => wo.steps.some(s => s.targetHeartRate && /Z\d/i.test(s.targetHeartRate))) && hrEmpty)
-    w.push({ level: 'warn', msg: '训练步骤包含 Z1-Z5 心率区间引用，但未填写心率区间映射，同步后心率目标将缺失。' })
-  const noDate = plan.workouts.filter(wo => !wo.date)
-  if (noDate.length)
-    w.push({ level: 'warn', msg: `${noDate.length} 个训练没有具体日期，无法自动排期。` })
-  plan.workouts.forEach(wo => {
-    if (wo.steps.some(s => s.type === 'interval') && !wo.steps.some(s => s.type === 'recovery'))
-      w.push({ level: 'warn', msg: `「${wo.title}」包含间歇步骤但未找到恢复步骤，请同步前确认。` })
-  })
+    w.push({ level: 'warn', msg: '训练步骤包含 Z1-Z5 心率区间引用，但未填写心率区间映射。' })
   return w
 }
 
-// ── gccli generation ──────────────────────────────────────────────────────
+// ── gccli ─────────────────────────────────────────────────────────────────
 
 function generateCliOutput(plan: TrainingPlan): string {
   const active = plan.workouts.filter(wo => wo.steps.length > 0)
-  if (!active.length) return '# 无可同步的训练（全部为休息日）'
-  const lines = [
-    `# 训练计划：${plan.name}  共 ${active.length} 个训练日`, '',
-    '# ── 步骤 1：保存 JSON 文件并执行 create 命令 ──', '',
-  ]
+  if (!active.length) return '# 无可同步的训练'
+  const lines = [`# 训练计划：${plan.name}  共 ${active.length} 个训练日`, '']
   active.forEach((wo, i) => {
     const slug = `workout-${i + 1}-${wo.date}`
     lines.push(`# ${wo.date} ${weekday(wo.date)} · ${wo.title}`)
     lines.push(`cat > ${slug}.json << 'EOF'`)
-    lines.push(buildWorkoutJson(wo))
+    lines.push(JSON.stringify({ workoutName: wo.title, sportType: { sportTypeId: 1, sportTypeKey: 'running' }, workoutSegments: [{ segmentOrder: 1, sportType: { sportTypeId: 1, sportTypeKey: 'running' }, workoutSteps: wo.steps.map((s, i) => ({ type: 'ExecutableStepDTO', stepOrder: i + 1, stepType: { stepTypeKey: s.type }, endCondition: s.distanceMeters != null ? { conditionTypeKey: 'distance', conditionValue: s.distanceMeters } : { conditionTypeKey: 'time', conditionValue: s.durationSeconds } })) }] }, null, 2))
     lines.push('EOF', '', `gccli workouts create --file ${slug}.json`, '')
   })
-  lines.push('# ── 步骤 2：执行 schedule 命令 ──', '')
-  active.forEach(wo => lines.push(`gccli workouts schedule add <WORKOUT_ID> --date ${wo.date}`))
   return lines.join('\n')
-}
-
-function buildWorkoutJson(wo: PlannedWorkout): string {
-  return JSON.stringify({
-    workoutName: wo.title,
-    sportType: { sportTypeId: 1, sportTypeKey: 'running' },
-    workoutSegments: [{
-      segmentOrder: 1,
-      sportType: { sportTypeId: 1, sportTypeKey: 'running' },
-      workoutSteps: wo.steps.map((s, i) => ({
-        type: 'ExecutableStepDTO', stepOrder: i + 1,
-        stepType: { stepTypeKey: s.type },
-        endCondition: s.distanceMeters != null
-          ? { conditionTypeKey: 'distance', conditionValue: s.distanceMeters }
-          : { conditionTypeKey: 'time',     conditionValue: s.durationSeconds },
-        ...(s.targetPace ? { targetType: { workoutTargetTypeKey: 'pace.zone' }, description: s.targetPace } : {}),
-        ...(s.repeat && s.repeat > 1 ? { repeat: s.repeat } : {}),
-      }))
-    }]
-  }, null, 2)
 }
 
 // ── Copy hook ─────────────────────────────────────────────────────────────
@@ -298,30 +349,16 @@ function useCopy() {
   return { copied, copy }
 }
 
-// ── HR zones ──────────────────────────────────────────────────────────────
-
-interface HrZones { z1: string; z2: string; z3: string; z4: string; z5: string }
-const DEFAULT_HR: HrZones = { z1: '110-130', z2: '130-150', z3: '150-165', z4: '165-178', z5: '178-190' }
-
 // ── Sample data ───────────────────────────────────────────────────────────
 
-const SAMPLE_TEXT = `周一：轻松跑 8公里，配速 6:00-6:30/km，心率 130-145 bpm
-周三：阈值训练 — 热身 2km + 3×8分钟 T 配速（4:55-5:10/km，心率 165-175）+ 组间 90s 慢跑恢复 + 放松 2km
-周五：有氧节奏跑 10公里，配速 5:30-5:45/km，心率 150-162
-周日：长距离 16公里，配速 6:10-6:40/km，心率 135-148`
+const SAMPLE_TEXT = `周一：轻松跑 8公里，配速 6:00-6:30/km
+周二：力量训练 45分钟（深蹲、硬拉、箭步蹲）
+周三：阈值训练 — 热身 2km + 3×8分钟 T 配速（4:55-5:10/km）+ 放松 2km
+周五：有氧节奏跑 10公里，配速 5:30-5:45/km
+周六：核心训练 30分钟（平板支撑、卷腹、俄罗斯转体）
+周日：长距离 16公里，配速 6:10-6:40/km`
 
-const SAMPLE_JSON = JSON.stringify({
-  name: "示例训练计划",
-  workouts: [{
-    date: new Date().toISOString().slice(0, 10), title: "阈值间歇",
-    steps: [
-      { type: "warmup",   distanceMeters: 2000, durationSeconds: 720, targetPace: "6:00/km" },
-      { type: "interval", distanceMeters: 1600, durationSeconds: 480, targetPace: "4:55-5:10/km", targetHeartRate: "165-175", repeat: 3 },
-      { type: "recovery", distanceMeters:  400, durationSeconds:  90, targetPace: "6:30/km", repeat: 3 },
-      { type: "cooldown", distanceMeters: 2000, durationSeconds: 720, targetPace: "6:00/km" },
-    ]
-  }]
-}, null, 2)
+const SAMPLE_JSON = JSON.stringify({ name: '示例计划', workouts: [{ date: new Date().toISOString().slice(0, 10), title: '阈值间歇', steps: [{ type: 'warmup', distanceMeters: 2000, durationSeconds: 720, targetPace: '6:00/km' }, { type: 'interval', distanceMeters: 1600, durationSeconds: 480, targetPace: '4:55-5:10/km', targetHeartRate: '165-175', repeat: 3 }, { type: 'recovery', distanceMeters: 400, durationSeconds: 90, targetPace: '6:30/km', repeat: 3 }, { type: 'cooldown', distanceMeters: 2000, durationSeconds: 720, targetPace: '6:00/km' }] }] }, null, 2)
 
 // ── WorkoutBar ────────────────────────────────────────────────────────────
 
@@ -352,10 +389,9 @@ function WorkoutBar({ steps, height = 6, showLegend = false }: { steps: WorkoutS
   )
 }
 
-// ── Step detail (structured, not table) ───────────────────────────────────
+// ── StepDetail ────────────────────────────────────────────────────────────
 
 function StepDetail({ steps }: { steps: WorkoutStep[] }) {
-  // Group adjacent steps with same repeat value
   const groups: Array<{ steps: WorkoutStep[]; repeat: number }> = []
   let i = 0
   while (i < steps.length) {
@@ -387,14 +423,187 @@ function StepDetail({ steps }: { steps: WorkoutStep[] }) {
               <div key={si} className="step-row">
                 <span className={`badge badge--${s.type}`}>{STEP_TYPE_LABELS[s.type]}</span>
                 <span className="step-row__info">{fmtStep(s)}</span>
-                {s.targetHeartRate && (
-                  <span className="step-row__hr">♥ {s.targetHeartRate}</span>
-                )}
+                {s.targetHeartRate && <span className="step-row__hr">♥ {s.targetHeartRate}</span>}
               </div>
             ))}
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── StepEditor ────────────────────────────────────────────────────────────
+
+function StepEditor({ steps, onChange }: { steps: WorkoutStep[]; onChange: (steps: WorkoutStep[]) => void }) {
+  function update(idx: number, patch: Partial<WorkoutStep>) {
+    onChange(steps.map((s, i) => i === idx ? { ...s, ...patch } : s))
+  }
+  function del(idx: number) { onChange(steps.filter((_, i) => i !== idx)) }
+  function add() {
+    onChange([...steps, { type: 'easy', distanceMeters: 1000 }])
+  }
+  return (
+    <div className="step-editor">
+      {steps.map((s, i) => (
+        <div key={i} className="step-editor__row">
+          <select value={s.type} onChange={e => update(i, { type: e.target.value as StepType })} className="step-editor__type">
+            {Object.entries(STEP_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input type="number" placeholder="距离m" value={s.distanceMeters ?? ''} min={0}
+            onChange={e => update(i, { distanceMeters: e.target.value ? Number(e.target.value) : undefined })}
+            className="step-editor__num" />
+          <input type="number" placeholder="时长s" value={s.durationSeconds ?? ''} min={0}
+            onChange={e => update(i, { durationSeconds: e.target.value ? Number(e.target.value) : undefined })}
+            className="step-editor__num" />
+          <input type="text" placeholder="配速" value={s.targetPace ?? ''}
+            onChange={e => update(i, { targetPace: e.target.value || undefined })}
+            className="step-editor__pace" />
+          <input type="text" placeholder="心率" value={s.targetHeartRate ?? ''}
+            onChange={e => update(i, { targetHeartRate: e.target.value || undefined })}
+            className="step-editor__pace" />
+          <input type="number" placeholder="重复" value={s.repeat ?? ''} min={1}
+            onChange={e => update(i, { repeat: e.target.value ? Number(e.target.value) : undefined })}
+            className="step-editor__repeat" />
+          <button className="btn--icon" style={{ color: 'var(--error)', fontSize: 12 }} onClick={() => del(i)}>✕</button>
+        </div>
+      ))}
+      <button className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-start' }} onClick={add}>＋ 添加步骤</button>
+    </div>
+  )
+}
+
+// ── Edit Drawer ────────────────────────────────────────────────────────────
+
+interface EditDrawerProps {
+  vm: WorkoutViewModel
+  onSave: (updated: Partial<WorkoutViewModel>) => void
+  onClose: () => void
+}
+
+function EditDrawer({ vm, onSave, onClose }: EditDrawerProps) {
+  const [title,          setTitle         ] = useState(vm.title)
+  const [date,           setDate          ] = useState(vm.date)
+  const [sportType,      setSportType     ] = useState<SportType>(vm.sportType)
+  const [category,       setCategory      ] = useState<WorkoutCategory>(vm.category)
+  const [steps,          setSteps         ] = useState<WorkoutStep[]>(vm.steps)
+  const [notes,          setNotes         ] = useState(vm.notes)
+  const [enabledForSync, setEnabledForSync] = useState(vm.enabledForSync)
+
+  function handleSave() {
+    // Recompute confirm issues with new sport type
+    const { uncertain } = detectSportType({ date, title, steps })
+    const fakeWo: PlannedWorkout = { date, title, steps }
+    const newIssues = getConfirmIssues(fakeWo, sportType, uncertain && sportType === 'other')
+    const newConfirmStatus: ConfirmStatus = newIssues.length === 0 ? 'none' :
+      vm.confirmStatus === 'confirmed' ? 'confirmed' : 'pending'
+    onSave({
+      title, date, sportType, category: sportType === 'running' ? category : 'other',
+      steps, notes, enabledForSync,
+      confirmIssues: newIssues,
+      confirmStatus: newConfirmStatus,
+    })
+    onClose()
+  }
+
+  const sportCfg = SPORT_CONFIG[sportType]
+
+  return (
+    <div className="edit-drawer">
+      <div className="edit-drawer__header">
+        <span className="fw-6" style={{ fontSize: 13 }}>编辑训练</span>
+        <button className="btn--icon" onClick={onClose}>✕</button>
+      </div>
+      <div className="edit-drawer__body">
+
+        {/* Sport type — most important */}
+        <div className="edit-section">
+          <div className="edit-section__label">运动类型</div>
+          <div className="sport-type-grid">
+            {SPORT_TYPE_OPTIONS.map(opt => {
+              const cfg = SPORT_CONFIG[opt.value]
+              return (
+                <button key={opt.value}
+                  className={`sport-type-btn ${sportType === opt.value ? 'sport-type-btn--active' : ''}`}
+                  style={sportType === opt.value ? { background: cfg.bg, color: cfg.color, borderColor: cfg.color } : {}}
+                  onClick={() => setSportType(opt.value)}>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          {sportType !== 'running' && SPORT_CONFIG[sportType].garminSupport === 'notes' && (
+            <p className="edit-hint">当前仅支持跑步训练的结构化同步。此训练类型将以备注形式同步到 Garmin。</p>
+          )}
+          {sportType === 'rest' && (
+            <p className="edit-hint">休息日默认不参与 Garmin 同步。</p>
+          )}
+        </div>
+
+        {/* Title + Date */}
+        <div className="edit-section">
+          <div className="edit-section__label">训练名称</div>
+          <input className="edit-input" type="text" value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <div className="edit-section">
+          <div className="edit-section__label">日期</div>
+          <input className="edit-input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+
+        {/* Category — only for running */}
+        {sportType === 'running' && (
+          <div className="edit-section">
+            <div className="edit-section__label">训练分类</div>
+            <select className="edit-input" value={category}
+              onChange={e => setCategory(e.target.value as WorkoutCategory)}>
+              {Object.entries(CAT_CONFIG).filter(([k]) => k !== 'rest').map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Sync toggle */}
+        <div className="edit-section">
+          <div className="edit-section__label">同步到 Garmin</div>
+          <label className="toggle-row">
+            <span className="toggle-label">{enabledForSync ? '参与同步' : '不参与同步'}</span>
+            <button className={`toggle ${enabledForSync ? 'toggle--on' : ''}`}
+              onClick={() => setEnabledForSync(v => !v)} />
+          </label>
+        </div>
+
+        {/* Steps — only for running */}
+        {sportType === 'running' && (
+          <div className="edit-section">
+            <div className="edit-section__label">训练步骤</div>
+            <StepEditor steps={steps} onChange={setSteps} />
+          </div>
+        )}
+
+        {/* Notes */}
+        <div className="edit-section" style={{ marginBottom: 0 }}>
+          <div className="edit-section__label">备注 notes</div>
+          <textarea className="edit-textarea" value={notes} onChange={e => setNotes(e.target.value)}
+            placeholder="可填写补充说明、注意事项等" rows={3} />
+        </div>
+
+        {/* Sport type tag preview */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 4 }}>
+          <span className="type-tag" style={{ background: sportCfg.bg, color: sportCfg.color }}>{sportCfg.label}</span>
+          {sportType === 'running' && (
+            <span className="type-tag" style={{ background: CAT_CONFIG[category].bg, color: CAT_CONFIG[category].color }}>
+              {CAT_CONFIG[category].label}
+            </span>
+          )}
+          {!enabledForSync && <span className="type-tag" style={{ background: '#F3F4F6', color: '#9CA3AF' }}>不同步</span>}
+        </div>
+
+      </div>
+      <div className="edit-drawer__footer">
+        <button className="btn btn--ghost" style={{ flex: 1 }} onClick={onClose}>取消</button>
+        <button className="btn btn--primary" style={{ flex: 2 }} onClick={handleSave}>保存修改</button>
+      </div>
     </div>
   )
 }
@@ -422,11 +631,11 @@ export default function App() {
   }
 
   // ── Input ────────────────────────────────────────────────────
-  const [inputTab,      setInputTab     ] = useState<'text' | 'json' | 'vdot'>('text')
-  const [inputText,     setInputText    ] = useState('')
-  const [inputCollapsed, setInputCollapsed] = useState(false)   // collapses after parse
-  const [hrZones,       setHrZones      ] = useState<HrZones>(DEFAULT_HR)
-  const [hrOpen,        setHrOpen       ] = useState(false)
+  const [inputTab,       setInputTab      ] = useState<'text' | 'json' | 'vdot'>('text')
+  const [inputText,      setInputText     ] = useState('')
+  const [inputCollapsed, setInputCollapsed] = useState(false)
+  const [hrZones,        setHrZones       ] = useState<HrZones>(DEFAULT_HR)
+  const [hrOpen,         setHrOpen        ] = useState(false)
   const hrSetter = (z: keyof HrZones) => (e: ChangeEvent<HTMLInputElement>) =>
     setHrZones(v => ({ ...v, [z]: e.target.value }))
 
@@ -450,46 +659,50 @@ export default function App() {
     setVdotResult(v); if (v) setGenVdot(v.toFixed(1))
   }
 
-  // ── Parse ────────────────────────────────────────────────────
+  // ── Parse / Plan ──────────────────────────────────────────────
   type ParseStatus = 'idle' | 'loading' | 'success' | 'error'
   const [parseStatus, setParseStatus] = useState<ParseStatus>('idle')
   const [parseError,  setParseError ] = useState<string | null>(null)
   const [plan,        setPlan       ] = useState<TrainingPlan | null>(null)
 
-  // 每个训练的确认状态：key=workout index, value=ConfirmStatus
-  const [confirmMap, setConfirmMap] = useState<Record<number, ConfirmStatus>>({})
-  // DOM refs for scrolling to a specific workout card
-  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
+  // ── View models (master state for workout editing) ────────────
+  const [viewModels, setViewModels] = useState<WorkoutViewModel[]>([])
 
-  // 当 plan 变化时，重新计算哪些训练需要确认
   useEffect(() => {
-    if (!plan) { setConfirmMap({}); return }
-    const m: Record<number, ConfirmStatus> = {}
-    plan.workouts.forEach((wo, i) => {
-      if (getWorkoutIssues(wo).length > 0) m[i] = 'pending'
-    })
-    setConfirmMap(m)
+    if (!plan) { setViewModels([]); return }
+    setViewModels(plan.workouts.map((wo, i) => buildViewModel(wo, i)))
   }, [plan])
 
-  function confirmWorkout(idx: number) {
-    setConfirmMap(prev => ({ ...prev, [idx]: 'confirmed' }))
+  function updateVm(idx: number, patch: Partial<WorkoutViewModel>) {
+    setViewModels(prev => prev.map((vm, i) => i === idx ? { ...vm, ...patch } : vm))
+  }
+  function confirmVm(idx: number) {
+    updateVm(idx, { confirmStatus: 'confirmed' })
+  }
+  function disableVm(idx: number) {
+    updateVm(idx, { enabledForSync: false, confirmStatus: 'none', confirmIssues: [] })
   }
 
+  // ── Edit drawer ───────────────────────────────────────────────
+  const [editIdx, setEditIdx] = useState<number | null>(null)
+
+  // ── Card refs for scrolling ───────────────────────────────────
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
+
   // ── Garmin ───────────────────────────────────────────────────
-  // 从 localStorage 立即恢复账号展示信息（无密码），避免页面加载闪烁
   const savedAccount = ls.get<GarminAccount>(GARMIN_ACCOUNT_KEY)
   const savedSession  = ls.get<StoredGarminSession>(GARMIN_SESSION_KEY)
   const [garminAccount,    setGarminAccount   ] = useState<GarminAccount | null>(savedAccount)
   const [gDomain,          setGDomain         ] = useState<'garmin.cn' | 'garmin.com'>(savedSession?.domain ?? 'garmin.cn')
   const [gUsername,        setGUsername        ] = useState(savedSession?.username ?? savedAccount?.email ?? '')
   const [gPassword,        setGPassword        ] = useState('')
-  const [loggedIn,         setLoggedIn         ] = useState(!!savedAccount)  // 有账号缓存则立即显示已连接
+  const [loggedIn,         setLoggedIn         ] = useState(!!savedAccount)
   const [loggingIn,        setLoggingIn        ] = useState(false)
   const [loginError,       setLoginError       ] = useState<string | null>(null)
   const [restoringSession, setRestoringSession ] = useState(!!savedSession)
   const [showGarminForm,   setShowGarminForm   ] = useState(false)
 
-  // 尝试在后台恢复真实会话 token；如果失败只清 session，保留账号展示信息
   useEffect(() => {
     const saved = ls.get<StoredGarminSession>(GARMIN_SESSION_KEY)
     if (!saved?.session) { setRestoringSession(false); return }
@@ -502,11 +715,7 @@ export default function App() {
       .then(({ ok }) => {
         if (!cancelled) {
           if (ok) setLoggedIn(true)
-          else {
-            // session 过期：清 session token，但保留账号展示信息让用户知道要重新登录
-            ls.del(GARMIN_SESSION_KEY)
-            setLoggedIn(false)
-          }
+          else { ls.del(GARMIN_SESSION_KEY); setLoggedIn(false) }
         }
       })
       .catch(() => { if (!cancelled) { ls.del(GARMIN_SESSION_KEY); setLoggedIn(false) } })
@@ -525,34 +734,22 @@ export default function App() {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? '登录失败')
       setLoggedIn(true)
-      // 保存 session token
       if (d.session) ls.set(GARMIN_SESSION_KEY, { domain: gDomain, username: gUsername, session: d.session })
-      // 持久化账号展示信息（无密码）
-      const accountInfo: GarminAccount = { email: gUsername, connectedAt: new Date().toISOString() }
-      ls.set(GARMIN_ACCOUNT_KEY, accountInfo)
-      setGarminAccount(accountInfo)
+      const acct: GarminAccount = { email: gUsername, connectedAt: new Date().toISOString() }
+      ls.set(GARMIN_ACCOUNT_KEY, acct); setGarminAccount(acct)
       setGPassword(''); setShowGarminForm(false)
     } catch (e) { setLoginError(e instanceof Error ? e.message : String(e)) }
     finally { setLoggingIn(false) }
   }
 
   function handleLogout() {
-    setLoggedIn(false)
-    setGarminAccount(null)
-    ls.del(GARMIN_SESSION_KEY)
-    ls.del(GARMIN_ACCOUNT_KEY)
-    setGPassword('')
-    // 通知后端退出 Garmin 会话（忽略错误）
+    setLoggedIn(false); setGarminAccount(null)
+    ls.del(GARMIN_SESSION_KEY); ls.del(GARMIN_ACCOUNT_KEY); setGPassword('')
     fetch('/api/garmin/logout', { method: 'POST' }).catch(() => {})
   }
-
   function handleSwitchAccount() {
-    // 清除旧账号缓存，打开登录表单
-    ls.del(GARMIN_SESSION_KEY)
-    ls.del(GARMIN_ACCOUNT_KEY)
-    setGarminAccount(null)
-    setLoggedIn(false)
-    setGUsername('')
+    ls.del(GARMIN_SESSION_KEY); ls.del(GARMIN_ACCOUNT_KEY)
+    setGarminAccount(null); setLoggedIn(false); setGUsername('')
     setShowGarminForm(true)
     fetch('/api/garmin/logout', { method: 'POST' }).catch(() => {})
   }
@@ -567,17 +764,18 @@ export default function App() {
 
   async function handleSync() {
     if (!plan) return
-    // 防御校验：确保没有未确认的训练
-    const pendingCount = Object.values(confirmMap).filter(v => v === 'pending').length
+    const pendingCount = viewModels.filter(vm => vm.confirmStatus === 'pending' && vm.enabledForSync).length
     if (pendingCount > 0) {
-      setSyncError(`请先确认 ${pendingCount} 个需要处理的训练（在中间面板点击展开后确认）`)
-      return
+      setSyncError(`请先确认 ${pendingCount} 个需要处理的训练`); return
     }
+    const toSync = viewModels.filter(vm => vm.enabledForSync && vm.confirmStatus !== 'pending')
+    if (!toSync.length) { setSyncError('没有可同步的训练'); return }
     setSyncing(true); setSyncError(null); setSyncResults(null); setUndoMsg(null); setUndoError(null)
     try {
+      const syncPlan: TrainingPlan = { name: plan.name, workouts: toSync.map(vmToPlannedWorkout) }
       const r = await fetch('/api/sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan: syncPlan }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? '同步失败')
@@ -605,13 +803,13 @@ export default function App() {
       if (!r.ok) throw new Error(d.error ?? '撤销失败')
       const results = d.results as { workoutId: string; ok: boolean; error?: string }[]
       const failed = results.filter(rr => !rr.ok)
-      if (failed.length) { setUndoError(`${failed.length} 条删除失败`) }
+      if (failed.length) setUndoError(`${failed.length} 条删除失败`)
       else { setUndoMsg(`已删除 ${results.length} 条训练`); removeFromSyncLog(results.map(rr => rr.workoutId)); setSyncResults(null) }
     } catch (e) { setUndoError(e instanceof Error ? e.message : String(e)) }
     finally { setUndoing(false) }
   }
 
-  // ── Parse handlers ────────────────────────────────────────────
+  // ── Parse handlers ─────────────────────────────────────────────
   async function doParse(planText: string) {
     if (!planText.trim()) return
     setParseStatus('loading'); setParseError(null); setPlan(null)
@@ -655,32 +853,26 @@ export default function App() {
     e.target.files?.[0]?.text().then(t => { setInputText(t); setInputTab('json') })
   }
 
-  // ── UI state ─────────────────────────────────────────────────
-  const [expandedRow,  setExpandedRow  ] = useState<number | null>(null)
-  const [mobileTab,    setMobileTab    ] = useState<'input' | 'results' | 'output'>('input')
-  const [advancedOpen, setAdvancedOpen ] = useState(false)
+  // ── UI state ──────────────────────────────────────────────────
+  const [mobileTab,    setMobileTab   ] = useState<'input' | 'results' | 'output'>('input')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   // ── Derived ───────────────────────────────────────────────────
   const { copied, copy } = useCopy()
   const cliOutput      = plan ? generateCliOutput(plan) : ''
   const warnings       = plan ? computeWarnings(plan, hrZones) : []
   const llmReady       = !!(baseUrl.trim() && llmApiKey.trim() && model.trim())
-  const activeWorkouts = plan ? plan.workouts.filter(w => w.steps.length > 0) : []
-  const totalDist      = plan ? plan.workouts.reduce((a, w) => a + workoutTotals(w).dist, 0) : 0
-  const totalDur       = plan ? plan.workouts.reduce((a, w) => a + workoutTotals(w).dur, 0) : 0
-  const problemCount   = plan ? plan.workouts.filter(wo => getWorkoutIssues(wo).length > 0).length : 0
-  // 当前仍处于 pending 状态（未确认）的训练数
-  const pendingCount   = Object.values(confirmMap).filter(v => v === 'pending').length
+  const enabledVms     = viewModels.filter(vm => vm.enabledForSync)
+  const pendingCount   = enabledVms.filter(vm => vm.confirmStatus === 'pending').length
+  const nonRunningVms  = viewModels.filter(vm => vm.sportType !== 'running' && vm.sportType !== 'rest' && vm.enabledForSync)
+  const totalDist      = viewModels.reduce((a, vm) => a + workoutTotals(vm).dist, 0)
+  const totalDur       = viewModels.reduce((a, vm) => a + workoutTotals(vm).dur, 0)
 
-  // 滚动到第一个待确认的训练卡片并展开
   function scrollToFirstPending() {
-    const firstIdx = plan?.workouts.findIndex((_, i) => confirmMap[i] === 'pending') ?? -1
-    if (firstIdx < 0) return
-    setExpandedRow(firstIdx)
-    setMobileTab('results')
-    setTimeout(() => {
-      cardRefs.current[firstIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 50)
+    const idx = viewModels.findIndex(vm => vm.confirmStatus === 'pending' && vm.enabledForSync)
+    if (idx < 0) return
+    setExpandedRow(idx); setMobileTab('results')
+    setTimeout(() => cardRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
   }
 
   const parseLabel = parseStatus === 'loading'
@@ -730,18 +922,28 @@ export default function App() {
         </div>
       )}
 
+      {/* ── Edit drawer overlay ── */}
+      {editIdx !== null && viewModels[editIdx] && (
+        <>
+          <div className="edit-drawer-backdrop" onClick={() => setEditIdx(null)} />
+          <EditDrawer
+            vm={viewModels[editIdx]}
+            onSave={patch => updateVm(editIdx, patch)}
+            onClose={() => setEditIdx(null)}
+          />
+        </>
+      )}
+
       {/* ── Header ── */}
       <header className="app-header">
-        {/* Left: brand */}
         <div className="app-header__brand">
           <span className="app-header__brand-dot" />
           训练计划导入工具
         </div>
 
-        {/* Center: plan summary (appears after parse) */}
-        {plan && (
+        {plan && viewModels.length > 0 && (
           <div className="header-summary">
-            <span className="header-summary__item">{activeWorkouts.length} 个训练</span>
+            <span className="header-summary__item">{enabledVms.length} 个训练</span>
             <span className="header-summary__sep">·</span>
             <span className="header-summary__item">{fmtDist(totalDist)}</span>
             {totalDur > 0 && (
@@ -762,7 +964,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Right: garmin + settings */}
         <div className="app-header__right">
           {restoringSession ? (
             <span className="status-badge"><span className="status-badge__dot" />验证会话…</span>
@@ -772,7 +973,6 @@ export default function App() {
               {garminAccount.email}
             </span>
           ) : garminAccount ? (
-            /* 有账号信息但 session 过期 */
             <button className="status-badge status-badge--btn status-badge--expired"
               onClick={() => { setShowGarminForm(true); setGUsername(garminAccount.email); setMobileTab('output') }}>
               <span className="status-badge__dot status-badge__dot--expired" />
@@ -807,11 +1007,8 @@ export default function App() {
 
         {/* ════ LEFT: Input ════ */}
         <div className={`panel ${mobileTab === 'input' ? 'panel--active' : ''}`}>
-
-          {/* If plan exists: collapsible wrapper */}
           {plan ? (
             <>
-              {/* Collapsible header */}
               <div className="panel__collapse-trigger" onClick={() => setInputCollapsed(v => !v)}>
                 <span className="fw-6" style={{ fontSize: 12 }}>原始训练计划</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -826,17 +1023,10 @@ export default function App() {
                   <span className={`collapsible__caret ${inputCollapsed ? '' : 'collapsible__caret--open'}`}>▼</span>
                 </div>
               </div>
-
-              {/* Input content (expandable) */}
-              {!inputCollapsed && (
-                <div className="panel__body gap-10">
-                  {renderInputContent()}
-                </div>
-              )}
+              {!inputCollapsed && <div className="panel__body gap-10">{renderInputContent()}</div>}
             </>
           ) : (
             <>
-              {/* Normal header with tabs */}
               <div className="panel__header">
                 <span className="fw-6" style={{ fontSize: 13 }}>训练计划</span>
                 <div className="seg">
@@ -848,21 +1038,16 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              <div className="panel__body gap-10">
-                {renderInputContent()}
-              </div>
+              <div className="panel__body gap-10">{renderInputContent()}</div>
             </>
           )}
-
-          {/* ── Fixed footer: parse button ── */}
           <div className="panel__footer">
-            <button className="btn btn--primary" onClick={handleParse} disabled={parseDisabled}>
+            <button className="btn btn--primary" style={{ width: '100%' }} onClick={handleParse} disabled={parseDisabled}>
               {parseLabel}
             </button>
             {parseStatus === 'error' && parseError && (
               <div className="warn-item warn-item--error" style={{ marginTop: 8 }}>
-                <span className="warn-item__icon">✕</span>
-                <span>{parseError}</span>
+                <span className="warn-item__icon">✕</span><span>{parseError}</span>
               </div>
             )}
           </div>
@@ -875,12 +1060,11 @@ export default function App() {
             {plan && <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>{plan.name}</span>}
           </div>
 
-          {/* Loading skeleton */}
           {parseStatus === 'loading' && (
             <div className="panel__body" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[1, 2, 3, 4].map(i => (
+              {[1,2,3,4].map(i => (
                 <div key={i} className="wo-card" style={{ padding: 14 }}>
-                  <div className="skeleton" style={{ height: 14, width: `${40 + i * 10}%`, marginBottom: 8, borderRadius: 4 }} />
+                  <div className="skeleton" style={{ height: 14, width: `${40+i*10}%`, marginBottom: 8, borderRadius: 4 }} />
                   <div className="skeleton" style={{ height: 11, width: '55%', marginBottom: 8, borderRadius: 4 }} />
                   <div className="skeleton" style={{ height: 6, borderRadius: 3 }} />
                 </div>
@@ -888,7 +1072,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Empty state */}
           {parseStatus !== 'loading' && !plan && (
             <div className="panel__body">
               <div className="empty">
@@ -904,10 +1087,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Results */}
           {plan && parseStatus !== 'loading' && (
             <>
-              {/* Prominent warnings */}
               {warnings.length > 0 && (
                 <div className="warnings-banner">
                   {warnings.map((w, i) => (
@@ -919,67 +1100,73 @@ export default function App() {
                 </div>
               )}
 
-              {/* Workout cards */}
               <div className="panel__body" style={{ padding: '8px 0' }}>
-                {plan.workouts.map((wo, wi) => {
-                  const { dur, dist } = workoutTotals(wo)
-                  const cat        = classifyWorkout(wo)
-                  const catCfg     = CAT_CONFIG[cat]
-                  const intLvl     = getIntensity(cat)
-                  const intCfg     = INT_CONFIG[intLvl]
-                  const issues     = getWorkoutIssues(wo)
-                  const isRest     = wo.steps.length === 0
-                  const expanded   = expandedRow === wi
-                  const confirmSt  = confirmMap[wi] ?? 'none'
-                  const isPending  = confirmSt === 'pending'
-                  const isConfirmed = confirmSt === 'confirmed'
+                {viewModels.map((vm, wi) => {
+                  const { dur, dist } = workoutTotals(vm)
+                  const sportCfg  = SPORT_CONFIG[vm.sportType]
+                  const catCfg    = CAT_CONFIG[vm.category]
+                  const intCfg    = INT_CONFIG[getIntensity(vm.category)]
+                  const isRest    = vm.sportType === 'rest'
+                  const isRunning = vm.sportType === 'running'
+                  const expanded  = expandedRow === wi
+                  const isPending = vm.confirmStatus === 'pending' && vm.enabledForSync
+                  const isConfirmed = vm.confirmStatus === 'confirmed'
+                  const isDisabled  = !vm.enabledForSync
 
                   return (
                     <div key={wi}
                       ref={el => { cardRefs.current[wi] = el }}
-                      className={`wo-card ${expanded ? 'wo-card--expanded' : ''} ${isPending ? 'wo-card--warn' : ''} ${isConfirmed ? 'wo-card--confirmed' : ''}`}>
-                      {/* Card header row */}
+                      className={`wo-card ${expanded ? 'wo-card--expanded' : ''} ${isPending ? 'wo-card--warn' : ''} ${isConfirmed ? 'wo-card--confirmed' : ''} ${isDisabled ? 'wo-card--disabled' : ''}`}>
+
                       <div className="wo-card__header" onClick={() => !isRest && setExpandedRow(expanded ? null : wi)}>
                         {/* Date */}
                         <div className="wo-card__date">
-                          <span className="wo-card__date-val">{wo.date.slice(5)}</span>
-                          <span className="wo-card__weekday">{weekday(wo.date)}</span>
+                          <span className="wo-card__date-val">{vm.date.slice(5)}</span>
+                          <span className="wo-card__weekday">{weekday(vm.date)}</span>
                         </div>
 
-                        {/* Title + tags */}
+                        {/* Main */}
                         <div className="wo-card__main">
                           <div className="wo-card__title-row">
-                            <span className="wo-card__title">{isRest ? '休息日' : wo.title}</span>
-                            {!isRest && (
+                            <span className="wo-card__title" style={isDisabled ? { color: 'var(--tx-4)', textDecoration: 'line-through' } : {}}>
+                              {isRest ? '休息日' : vm.title}
+                            </span>
+                            {/* Sport type tag */}
+                            <span className="type-tag" style={{ background: sportCfg.bg, color: sportCfg.color }}>
+                              {sportCfg.label}
+                            </span>
+                            {/* Category tag (only for running) */}
+                            {isRunning && vm.category !== 'rest' && (
                               <span className="type-tag" style={{ background: catCfg.bg, color: catCfg.color }}>
                                 {catCfg.label}
                               </span>
                             )}
-                            {isPending && (
-                              <span className="wo-card__status-badge wo-card__status-badge--pending">⚠ 需确认</span>
-                            )}
-                            {isConfirmed && (
-                              <span className="wo-card__status-badge wo-card__status-badge--confirmed">✓ 已确认</span>
-                            )}
+                            {/* Status badges */}
+                            {isPending && <span className="wo-card__status-badge wo-card__status-badge--pending">⚠ 需确认</span>}
+                            {isConfirmed && <span className="wo-card__status-badge wo-card__status-badge--confirmed">✓ 已确认</span>}
+                            {isDisabled && <span className="wo-card__status-badge wo-card__status-badge--disabled">不同步</span>}
                           </div>
-                          {!isRest && (
+                          {!isRest && vm.steps.length > 0 && (
                             <div className="wo-card__bar-row">
-                              <WorkoutBar steps={wo.steps} height={5} />
+                              <WorkoutBar steps={vm.steps} height={5} />
                             </div>
                           )}
                         </div>
 
                         {/* Stats */}
                         <div className="wo-card__stats">
+                          {!isRest && dist > 0 && <span className="wo-stat">{fmtDist(dist)}</span>}
+                          {!isRest && dur > 0 && <span className="wo-stat wo-stat--time">{fmtDur(dur)}</span>}
+                          {isRunning && <span className="intensity-dot" style={{ background: intCfg.dot }} title={intCfg.label} />}
+                          {/* Edit button */}
+                          <button className="btn btn--ghost btn--sm"
+                            style={{ fontSize: 11, padding: '2px 8px' }}
+                            onClick={e => { e.stopPropagation(); setEditIdx(wi) }}>
+                            编辑
+                          </button>
                           {!isRest && (
-                            <>
-                              <span className="wo-stat">{fmtDist(dist)}</span>
-                              <span className="wo-stat wo-stat--time">{fmtDur(dur)}</span>
-                              <span className="intensity-dot" style={{ background: intCfg.dot }} title={intCfg.label} />
-                            </>
-                          )}
-                          {!isRest && (
-                            <button className="btn--icon expand-btn" onClick={e => { e.stopPropagation(); setExpandedRow(expanded ? null : wi) }}>
+                            <button className="btn--icon expand-btn"
+                              onClick={e => { e.stopPropagation(); setExpandedRow(expanded ? null : wi) }}>
                               {expanded ? '▲' : '▼'}
                             </button>
                           )}
@@ -989,45 +1176,54 @@ export default function App() {
                       {/* Expanded detail */}
                       {expanded && !isRest && (
                         <div className="wo-card__detail">
-                          {/* Issue list */}
-                          {issues.length > 0 && (
+                          {vm.confirmIssues.length > 0 && vm.enabledForSync && (
                             <div className="wo-card__issue-list">
-                              {issues.map((iss, ii) => (
+                              {vm.confirmIssues.map((iss, ii) => (
                                 <div key={ii} className="wo-card__issue-item">⚠ {iss}</div>
                               ))}
                             </div>
                           )}
 
-                          <WorkoutBar steps={wo.steps} height={12} showLegend />
-                          <StepDetail steps={wo.steps} />
+                          {isRunning && vm.steps.length > 0 && (
+                            <>
+                              <WorkoutBar steps={vm.steps} height={12} showLegend />
+                              <StepDetail steps={vm.steps} />
+                            </>
+                          )}
 
-                          {/* ── Confirm block (只在 pending 状态显示) ── */}
+                          {!isRunning && (
+                            <div style={{ fontSize: 12, color: 'var(--tx-3)', padding: '4px 0' }}>
+                              {sportCfg.garminSupport === 'notes'
+                                ? '此运动类型将以备注形式同步到 Garmin（不含步骤结构）。'
+                                : '此运动类型不参与 Garmin 同步。'}
+                              {vm.notes && <><br /><span style={{ color: 'var(--tx-2)' }}>备注：{vm.notes}</span></>}
+                            </div>
+                          )}
+
+                          {/* Confirm block */}
                           {isPending && (
                             <div className="confirm-block">
                               <div className="confirm-block__title">需要确认</div>
                               <div className="confirm-block__body">
-                                {issues.map((iss, ii) => <p key={ii}>• {iss}</p>)}
-                                <p>系统会将相关说明写入 Garmin notes。同步后 Garmin 中不会生成精确目标，只会显示备注。</p>
+                                {vm.confirmIssues.map((iss, ii) => <p key={ii}>• {iss}</p>)}
+                                <p>系统会将相关说明写入 Garmin notes。同步后不会生成精确目标，只会显示备注。</p>
                               </div>
                               <div className="confirm-block__actions">
-                                <button className="btn btn--primary btn--sm" onClick={() => confirmWorkout(wi)}>
+                                <button className="btn btn--primary btn--sm" onClick={() => confirmVm(wi)}>
                                   确认使用备注同步
                                 </button>
-                                <button className="btn btn--ghost btn--sm" onClick={() => {
-                                  setInputCollapsed(false)
-                                  setMobileTab('input')
-                                }}>
-                                  返回修改原文
+                                <button className="btn btn--ghost btn--sm" onClick={() => setEditIdx(wi)}>
+                                  编辑训练类型
+                                </button>
+                                <button className="btn btn--ghost btn--sm" onClick={() => disableVm(wi)}>
+                                  不参与同步
                                 </button>
                               </div>
                             </div>
                           )}
 
-                          {/* Already confirmed notice */}
                           {isConfirmed && (
-                            <div className="confirm-done">
-                              ✓ 已确认使用备注同步
-                            </div>
+                            <div className="confirm-done">✓ 已确认使用备注同步</div>
                           )}
                         </div>
                       )}
@@ -1047,7 +1243,6 @@ export default function App() {
 
           <div className="panel__body gap-10">
 
-            {/* Connection status */}
             {restoringSession ? (
               <p style={{ fontSize: 12, color: 'var(--tx-3)' }}>正在验证 Garmin 会话…</p>
             ) : (loggedIn || garminAccount) && !showGarminForm ? (
@@ -1063,7 +1258,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 如果 session 过期，提示重新登录 */}
                 {!loggedIn && (
                   <div className="warn-item warn-item--warn">
                     <span className="warn-item__icon">⚠</span>
@@ -1076,38 +1270,41 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Sync summary info */}
-                {plan && (
+                {viewModels.length > 0 && (
                   <div className="sync-summary">
                     <div className="sync-summary__row">
                       <span className="sync-summary__label">待同步训练</span>
-                      <span className="sync-summary__val">{activeWorkouts.length} 个</span>
+                      <span className="sync-summary__val">{enabledVms.length} 个</span>
                     </div>
-                    {/* 只显示仍未确认的数量（pending），已确认的显示 0 */}
                     <div
                       className={`sync-summary__row ${pendingCount > 0 ? 'sync-summary__row--warn sync-summary__row--clickable' : ''}`}
-                      onClick={pendingCount > 0 ? scrollToFirstPending : undefined}
-                      title={pendingCount > 0 ? '点击跳转到第一个待确认训练' : undefined}>
+                      onClick={pendingCount > 0 ? scrollToFirstPending : undefined}>
                       <span className="sync-summary__label">需要确认</span>
                       <span className="sync-summary__val">{pendingCount > 0 ? `${pendingCount} 个 →` : '0 个 ✓'}</span>
                     </div>
+                    {nonRunningVms.length > 0 && (
+                      <div className="sync-summary__row sync-summary__row--info">
+                        <span className="sync-summary__label">非跑步训练</span>
+                        <span className="sync-summary__val" style={{ color: 'var(--tx-3)' }}>{nonRunningVms.length} 个（备注形式）</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Big sync button — disabled when pending */}
                 <button className="btn btn--primary btn--sync"
                   onClick={handleSync}
-                  disabled={syncing || !plan || activeWorkouts.length === 0 || !loggedIn || pendingCount > 0}>
+                  disabled={syncing || !viewModels.length || !loggedIn || pendingCount > 0 || enabledVms.length === 0}>
                   {syncing ? (
                     <><span className="spin">⟳</span> 同步中…</>
                   ) : pendingCount > 0 ? (
                     `请先确认 ${pendingCount} 个训练`
-                  ) : plan ? (
-                    `同步 ${activeWorkouts.length} 个训练到 Garmin`
+                  ) : enabledVms.length > 0 ? (
+                    `同步 ${enabledVms.length} 个训练到 Garmin`
                   ) : (
-                    '同步到 Garmin'
+                    '没有可同步的训练'
                   )}
                 </button>
+
                 {pendingCount > 0 && (
                   <p style={{ fontSize: 11, color: 'var(--warn)', marginTop: -4 }}>
                     {pendingCount} 个训练需要确认后才能同步。
@@ -1116,13 +1313,18 @@ export default function App() {
                   </p>
                 )}
 
-                {/* Risk info */}
-                {plan && !syncResults && pendingCount === 0 && (
+                {viewModels.length > 0 && !syncResults && pendingCount === 0 && enabledVms.length > 0 && (
                   <div className="sync-risk">
                     <div className="sync-risk__item">
                       <span className="sync-risk__icon">ℹ</span>
-                      将创建 {activeWorkouts.length} 个 Garmin 训练，不会覆盖已有训练
+                      将创建 {enabledVms.length} 个 Garmin 训练，不会覆盖已有训练
                     </div>
+                    {nonRunningVms.length > 0 && (
+                      <div className="sync-risk__item">
+                        <span className="sync-risk__icon">ℹ</span>
+                        {nonRunningVms.length} 个非跑步训练将以备注形式同步（当前仅支持跑步结构化同步）
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1130,10 +1332,9 @@ export default function App() {
                   <div className="warn-item warn-item--error"><span className="warn-item__icon">✕</span>{syncError}</div>
                 )}
 
-                {/* Sync results */}
                 {syncResults && (
                   <div className="gap-10">
-                    <div className="sync-done-banner">
+                    <div className={`sync-done-banner ${syncResults.some(r => !r.ok) ? 'sync-done-banner--partial' : ''}`}>
                       {syncResults.every(r => r.ok)
                         ? `✓ 已同步 ${syncResults.length} 个训练`
                         : `同步完成：${syncResults.filter(r => r.ok).length} 成功 · ${syncResults.filter(r => !r.ok).length} 失败`
@@ -1160,7 +1361,6 @@ export default function App() {
                 )}
               </>
             ) : (
-              /* Login form */
               <div className="sync-area gap-10">
                 {!garminAccount && (
                   <p style={{ fontSize: 12, color: 'var(--tx-3)', marginBottom: 4 }}>
@@ -1193,38 +1393,32 @@ export default function App() {
                   disabled={loggingIn || !gUsername || !gPassword}>
                   {loggingIn ? '登录中…' : '登录 Garmin'}
                 </button>
-                {loginError && (
-                  <div className="warn-item warn-item--error"><span className="warn-item__icon">✕</span>{loginError}</div>
-                )}
+                {loginError && <div className="warn-item warn-item--error"><span className="warn-item__icon">✕</span>{loginError}</div>}
               </div>
             )}
 
-            {/* Compact training preview */}
-            {plan && activeWorkouts.length > 0 && (
+            {/* Compact preview */}
+            {viewModels.length > 0 && enabledVms.length > 0 && (
               <>
                 <div className="divider" />
                 <span className="section-title">训练预览</span>
                 <div className="sync-preview">
-                  {activeWorkouts.map((wo, i) => {
-                    // activeWorkouts[i] 不等于 plan.workouts[i]（休息日已过滤），需要找回原始 index
-                    const wi = plan!.workouts.indexOf(wo)
-                    const { dur, dist } = workoutTotals(wo)
-                    const cat = classifyWorkout(wo)
-                    const catCfg = CAT_CONFIG[cat]
-                    const confirmSt = confirmMap[wi] ?? 'none'
-                    const syncResult = syncResults?.find(r => r.title === wo.title && r.date === wo.date)
+                  {viewModels.filter(vm => vm.enabledForSync).map((vm, i) => {
+                    const wi = viewModels.indexOf(vm)
+                    const { dur, dist } = workoutTotals(vm)
+                    const sportCfg = SPORT_CONFIG[vm.sportType]
+                    const syncResult = syncResults?.find(r => r.title === vm.title && r.date === vm.date)
                     return (
-                      <div key={i}
-                        className={`sync-preview-item ${confirmSt === 'pending' ? 'sync-preview-item--warn' : ''}`}
+                      <div key={i} className={`sync-preview-item ${vm.confirmStatus === 'pending' ? 'sync-preview-item--warn' : ''}`}
                         onClick={() => { setExpandedRow(wi); setMobileTab('results'); setTimeout(() => cardRefs.current[wi]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }}
                         style={{ cursor: 'pointer' }}>
-                        <span className="sync-preview-date">{wo.date.slice(5)} {weekday(wo.date)}</span>
-                        <span className="sync-preview-title">{wo.title}</span>
-                        <span className="type-tag type-tag--xs" style={{ background: catCfg.bg, color: catCfg.color }}>{catCfg.label}</span>
-                        <span className="sync-preview-stat">{fmtDist(dist)}</span>
-                        <span className="sync-preview-stat">{fmtDur(dur)}</span>
-                        {confirmSt === 'pending'   && <span className="sync-preview-warn" title="需要确认">⚠</span>}
-                        {confirmSt === 'confirmed' && <span style={{ color: 'var(--success)', fontSize: 11 }}>✓</span>}
+                        <span className="sync-preview-date">{vm.date.slice(5)} {weekday(vm.date)}</span>
+                        <span className="sync-preview-title">{vm.title}</span>
+                        <span className="type-tag type-tag--xs" style={{ background: sportCfg.bg, color: sportCfg.color }}>{sportCfg.label}</span>
+                        {dist > 0 && <span className="sync-preview-stat">{fmtDist(dist)}</span>}
+                        {dur > 0  && <span className="sync-preview-stat">{fmtDur(dur)}</span>}
+                        {vm.confirmStatus === 'pending'   && <span className="sync-preview-warn">⚠</span>}
+                        {vm.confirmStatus === 'confirmed' && <span style={{ color: 'var(--success)', fontSize: 11 }}>✓</span>}
                         {syncResult && (
                           <span className={`sync-preview-result ${syncResult.ok ? 'sync-preview-result--ok' : 'sync-preview-result--err'}`}>
                             {syncResult.ok ? '✓' : '✕'}
@@ -1237,8 +1431,7 @@ export default function App() {
               </>
             )}
 
-            {/* Empty state when no plan */}
-            {!plan && (
+            {!viewModels.length && (
               <div className="empty" style={{ minHeight: 120 }}>
                 <span className="empty__icon">⚡</span>
                 <span className="empty__title">等待训练计划</span>
@@ -1246,30 +1439,15 @@ export default function App() {
               </div>
             )}
 
-            {/* Advanced / manual import */}
-            {plan && (
+            {viewModels.length > 0 && (
               <>
                 <div className="divider" />
                 <div className="collapsible__trigger" onClick={() => setAdvancedOpen(v => !v)}>
                   <span>高级 / 手动导入（gccli）</span>
                   <span className={`collapsible__caret ${advancedOpen ? 'collapsible__caret--open' : ''}`}>▼</span>
                 </div>
-                {advancedOpen && (
+                {advancedOpen && plan && (
                   <div className="collapsible__body gap-10">
-                    <ul className="checklist">
-                      <li>
-                        <span className={`chk-icon ${activeWorkouts.length > 0 ? 'chk-ok' : 'chk-off'}`}>
-                          {activeWorkouts.length > 0 ? '✓' : '○'}
-                        </span>
-                        至少 1 个包含步骤的训练日
-                      </li>
-                      <li>
-                        <span className={`chk-icon ${plan.workouts.every(w => w.date) ? 'chk-ok' : 'chk-warn'}`}>
-                          {plan.workouts.every(w => w.date) ? '✓' : '⚠'}
-                        </span>
-                        所有训练日包含日期
-                      </li>
-                    </ul>
                     <div className="code-block">
                       <div className="code-block__header">
                         <span className="code-block__label">bash</span>
@@ -1291,38 +1469,29 @@ export default function App() {
     </>
   )
 
-  // ── Input content renderer (shared between collapsed/expanded) ─
+  // ── Input content renderer ────────────────────────────────────
   function renderInputContent() {
     return (
       <>
         {inputTab === 'text' && (
           <>
-            <textarea className="input-textarea" value={inputText}
-              onChange={e => setInputText(e.target.value)}
+            <textarea className="input-textarea" value={inputText} onChange={e => setInputText(e.target.value)}
               placeholder={'粘贴自然语言训练计划，支持中文/Markdown 表格格式\n\n例：\n周三：阈值训练 — 热身 2km + 3×8min T 配速（4:55-5:10/km）+ 放松 2km'} />
-            <button className="btn btn--ghost btn--sm" onClick={() => setInputText(SAMPLE_TEXT)}>
-              加载示例课表
-            </button>
+            <button className="btn btn--ghost btn--sm" onClick={() => setInputText(SAMPLE_TEXT)}>加载示例课表</button>
           </>
         )}
-
         {inputTab === 'json' && (
           <>
-            <textarea className="input-textarea" value={inputText}
-              onChange={e => setInputText(e.target.value)}
+            <textarea className="input-textarea" value={inputText} onChange={e => setInputText(e.target.value)}
               placeholder="粘贴符合格式的 JSON，或点击下方按钮上传文件" />
             <div className="row">
-              <button className="btn btn--ghost btn--sm flex1" onClick={() => setInputText(SAMPLE_JSON)}>
-                加载 JSON 示例
-              </button>
+              <button className="btn btn--ghost btn--sm flex1" onClick={() => setInputText(SAMPLE_JSON)}>加载 JSON 示例</button>
               <label className="btn btn--ghost btn--sm flex1" style={{ textAlign: 'center', cursor: 'pointer', marginBottom: 0 }}>
-                上传文件
-                <input type="file" accept=".json,application/json" onChange={handleFileUpload} style={{ display: 'none' }} />
+                上传文件<input type="file" accept=".json" onChange={handleFileUpload} style={{ display: 'none' }} />
               </label>
             </div>
           </>
         )}
-
         {inputTab === 'vdot' && (
           <div className="gap-10">
             <div className="settings-panel gap-10">
@@ -1369,7 +1538,6 @@ export default function App() {
                 </>
               )}
             </div>
-
             <label className="field">
               <span className="field__label">当前 VDOT</span>
               <input type="number" step={0.1} value={genVdot} onChange={e => setGenVdot(e.target.value)} placeholder="46.5" />
@@ -1385,7 +1553,7 @@ export default function App() {
               <label className="field">
                 <span className="field__label">训练目的</span>
                 <select value={genGoal} onChange={e => setGenGoal(e.target.value as typeof genGoal)}>
-                  <option value="aerobic">有氧耐力（E 配速，心率 2 区）</option>
+                  <option value="aerobic">有氧耐力（E 配速）</option>
                   <option value="marathon">马拉松配速（M 配速）</option>
                   <option value="threshold">乳酸阈值（T 配速）</option>
                   <option value="speed">无氧 / 速度（I/R 配速）</option>
@@ -1403,11 +1571,7 @@ export default function App() {
                 </label>
               </>
             )}
-            {!llmReady && (
-              <p style={{ fontSize: 11, color: 'var(--warn)' }}>
-                请先点右上角「⚙ 设置」填写大模型接口
-              </p>
-            )}
+            {!llmReady && <p style={{ fontSize: 11, color: 'var(--warn)' }}>请先点右上角「⚙ 设置」填写大模型接口</p>}
           </div>
         )}
 
