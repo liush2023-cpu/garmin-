@@ -42,9 +42,9 @@ export function validateParseBody(body: unknown): ValidateResult<ParseBody> {
   const { planText, baseUrl, apiKey, model } = body as Record<string, unknown>;
   if (!isNonEmptyString(planText)) return fail("缺少 planText（非空字符串）");
   if (!isNonEmptyString(baseUrl))   return fail("缺少 baseUrl（非空字符串）");
-  if (!isNonEmptyString(apiKey))    return fail("缺少 apiKey（非空字符串）");
   if (!isNonEmptyString(model))     return fail("缺少 model（非空字符串）");
-  return { ok: true, data: { planText: planText.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim() } };
+  // apiKey 允许为空，路由层会尝试用服务端环境变量补全
+  return { ok: true, data: { planText: planText.trim(), baseUrl: baseUrl.trim(), apiKey: typeof apiKey === "string" ? apiKey.trim() : "", model: model.trim() } };
 }
 
 // ── /api/generate ───────────────────────────────────────────────────────────
@@ -61,8 +61,9 @@ export function validateGenerateBody(body: unknown): ValidateResult<GenerateBody
   const { goalParams, baseUrl, apiKey, model } = body as Record<string, unknown>;
 
   if (!isNonEmptyString(baseUrl)) return fail("缺少 baseUrl（非空字符串）");
-  if (!isNonEmptyString(apiKey))  return fail("缺少 apiKey（非空字符串）");
+  // apiKey 允许为空，路由层会尝试用服务端环境变量补全
   if (!isNonEmptyString(model))   return fail("缺少 model（非空字符串）");
+  const safeApiKey = typeof apiKey === "string" ? apiKey.trim() : "";
 
   if (typeof goalParams !== "object" || goalParams === null) return fail("缺少 goalParams 对象");
   const gp = goalParams as Record<string, unknown>;
@@ -77,7 +78,7 @@ export function validateGenerateBody(body: unknown): ValidateResult<GenerateBody
       ok: true,
       data: {
         goalParams: { mode: "single", vdot: gp.vdot, goal: gp.goal as "aerobic" | "marathon" | "threshold" | "speed" },
-        baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim(),
+        baseUrl: baseUrl.trim(), apiKey: safeApiKey, model: model.trim(),
       },
     };
   }
@@ -92,7 +93,7 @@ export function validateGenerateBody(body: unknown): ValidateResult<GenerateBody
     ok: true,
     data: {
       goalParams: { mode: "week", vdot: gp.vdot, daysPerWeek: days, weeklyDistanceKm: km },
-      baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim(),
+      baseUrl: baseUrl.trim(), apiKey: safeApiKey, model: model.trim(),
     },
   };
 }
