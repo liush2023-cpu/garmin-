@@ -33,7 +33,8 @@ export function GarminSync({
   onDomainChange,
   onUsernameChange,
   onPasswordChange,
-  onLoginErrorClear,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onLoginErrorClear: _onLoginErrorClear,
   onLogin,
   onLogout,
   onSyncComplete,
