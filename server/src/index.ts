@@ -22,14 +22,31 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
+// ── 服务端配置（环境变量，供前端读取默认值）──────────────────────────────────
+
+app.get("/api/config", (_req, res) => {
+  res.json({
+    llmBaseUrl: process.env.LLM_BASE_URL ?? "",
+    llmModel: process.env.LLM_MODEL ?? "",
+    // apiKey 只返回布尔值，不暴露实际 key
+    hasApiKey: !!process.env.LLM_API_KEY,
+  });
+});
+
+// 供 parse/generate 端点内部使用：如果请求里没带 apiKey，就用环境变量里的
+const SERVER_LLM_API_KEY = process.env.LLM_API_KEY ?? "";
+
 // ── LLM 相关 ────────────────────────────────────────────────────────────────
 
 app.post("/api/parse", apiLimiter, async (req, res) => {
   const v = validateParseBody(req.body);
   if (!v.ok) return res.status(v.status).json({ error: v.error });
+  // 如果前端没传 apiKey，用服务端配置的
+  const config = { ...v.data, apiKey: v.data.apiKey || SERVER_LLM_API_KEY };
+  if (!config.apiKey) return res.status(400).json({ error: "缺少 API Key（请在设置中填写或在服务端配置 LLM_API_KEY 环境变量）" });
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const plan = await parsePlanText(v.data.planText, v.data, today);
+    const plan = await parsePlanText(v.data.planText, config, today);
     res.json({ plan });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -39,9 +56,11 @@ app.post("/api/parse", apiLimiter, async (req, res) => {
 app.post("/api/generate", apiLimiter, async (req, res) => {
   const v = validateGenerateBody(req.body);
   if (!v.ok) return res.status(v.status).json({ error: v.error });
+  const config = { ...v.data, apiKey: v.data.apiKey || SERVER_LLM_API_KEY };
+  if (!config.apiKey) return res.status(400).json({ error: "缺少 API Key（请在设置中填写或在服务端配置 LLM_API_KEY 环境变量）" });
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const plan = await generatePlan(v.data.goalParams, v.data, today);
+    const plan = await generatePlan(v.data.goalParams, config, today);
     res.json({ plan });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

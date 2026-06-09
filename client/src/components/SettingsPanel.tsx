@@ -5,6 +5,7 @@ interface Props {
   baseUrl: string
   apiKey: string
   model: string
+  serverHasApiKey: boolean
   onProviderChange: (p: LlmProvider) => void
   onBaseUrlChange: (v: string) => void
   onApiKeyChange: (v: string) => void
@@ -17,6 +18,7 @@ export function SettingsPanel({
   baseUrl,
   apiKey,
   model,
+  serverHasApiKey,
   onProviderChange,
   onBaseUrlChange,
   onApiKeyChange,
@@ -27,9 +29,14 @@ export function SettingsPanel({
     <section className="card">
       <h2>设置：大模型接口配置</h2>
       <p className="hint">
-        用于「按 VDOT 生成课表」「自然语言解析」两个入口。接口地址、API Key、模型名称会保存在你浏览器的本地存储中，
-        下次打开自动填好；它们只会发送给你选择的模型服务商，不会上传到本工具的服务器。
+        用于「按 VDOT 生成课表」「自然语言解析」「AI 健康分析」等入口。接口地址和模型名称会保存在浏览器本地；
+        API Key 只会发送给你选择的模型服务商，不会上传到本工具的服务器。
       </p>
+      {serverHasApiKey && (
+        <p className="hint" style={{ color: '#22c55e' }}>
+          ✓ 服务端已配置 API Key（LLM_API_KEY 环境变量），此处无需填写。
+        </p>
+      )}
       <label>
         模型服务商
         <select value={provider} onChange={(e) => onProviderChange(e.target.value as LlmProvider)}>
@@ -50,7 +57,7 @@ export function SettingsPanel({
         />
       </label>
       <label>
-        API Key
+        API Key {serverHasApiKey && '（可选，留空使用服务端配置）'}
         <input type="password" placeholder="sk-..." value={apiKey} onChange={(e) => onApiKeyChange(e.target.value)} />
       </label>
       <label>
