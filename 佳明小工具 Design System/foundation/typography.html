@@ -1,0 +1,62 @@
+<!-- @dsCard group="Type" viewport="700x320" name="Typography" -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Typography</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body {
+      padding: 40px;
+      background: var(--color-bg-primary);
+    }
+    .samples {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .sample {
+      display: flex;
+      align-items: baseline;
+      gap: 20px;
+    }
+    .label {
+      min-width: 100px;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-quaternary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .text {
+      color: var(--color-text-primary);
+      line-height: var(--line-height-tight);
+    }
+  </style>
+</head>
+<body>
+  <div class="samples">
+    <div class="sample">
+      <div class="label">Display</div>
+      <h2 class="text">40px Semibold</h2>
+    </div>
+    <div class="sample">
+      <div class="label">Heading 1</div>
+      <h3 class="text">28px Semibold</h3>
+    </div>
+    <div class="sample">
+      <div class="label">Body</div>
+      <p class="text" style="font-size: var(--font-size-base);">13px Regular — Clear, readable body text</p>
+    </div>
+    <div class="sample">
+      <div class="label">Small</div>
+      <p class="text" style="font-size: var(--font-size-sm);">12px Regular — Secondary labels</p>
+    </div>
+    <div class="sample">
+      <div class="label">Micro</div>
+      <p class="text" style="font-size: var(--font-size-xs);">11px Regular — UI hints</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,318 @@
+<!-- @dsCard group="Training" viewport="800x1200" name="Dashboard Overview" subtitle="Main workout tracking interface" -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — 佳明小工具</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-base);
+    }
+
+    .header {
+      background: var(--color-bg-secondary);
+      border-bottom: 1px solid var(--color-border-primary);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: var(--font-weight-bold);
+      font-size: var(--font-size-lg);
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--color-primary);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 16px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: var(--radius-full);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary-border);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--color-success);
+      border-radius: 50%;
+    }
+
+    .container {
+      padding: 24px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .metric-card {
+      background: var(--color-bg-secondary);
+      border: 1px solid var(--color-border-primary);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .metric-label {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-quaternary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 28px;
+      font-weight: var(--font-weight-bold);
+      color: var(--color-text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-unit {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+      margin-top: 4px;
+    }
+
+    .workouts-section {
+      background: var(--color-bg-secondary);
+      border: 1px solid var(--color-border-primary);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+
+    .section-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-border-primary);
+      background: var(--color-bg-subtle);
+    }
+
+    .section-title {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .workout-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-border-primary);
+      gap: 12px;
+    }
+
+    .workout-item:last-child {
+      border-bottom: none;
+    }
+
+    .workout-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .workout-title {
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      margin-bottom: 4px;
+    }
+
+    .workout-meta {
+      display: flex;
+      gap: 12px;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: var(--radius-xs);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+
+    .badge-success {
+      background: var(--color-success-light);
+      color: var(--color-success);
+    }
+
+    .badge-warn {
+      background: var(--color-warn-light);
+      color: var(--color-warn);
+    }
+
+    .badge-info {
+      background: var(--color-info-light);
+      color: var(--color-info);
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border: 1px solid var(--color-primary);
+      background: var(--color-primary);
+      color: white;
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+
+    .button:hover {
+      background: var(--color-primary-hover);
+    }
+
+    .profile-bar {
+      display: flex;
+      height: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      gap: 1px;
+      background: var(--color-bg-subtle);
+    }
+
+    .profile-seg {
+      flex: 1;
+      border-radius: 2px;
+    }
+
+    .seg-warmup { background: var(--color-step-warmup); }
+    .seg-interval { background: var(--color-step-interval); }
+    .seg-easy { background: var(--color-step-easy); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div class="brand-icon">📊</div>
+      佳明小工具
+    </div>
+    <div class="status-badge">
+      <div class="status-dot"></div>
+      Connected
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Metrics -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Weekly Volume</div>
+        <div class="metric-value">42</div>
+        <div class="metric-unit">km this week</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Planned Workouts</div>
+        <div class="metric-value">6</div>
+        <div class="metric-unit">this week</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Training Load</div>
+        <div class="metric-value">28</div>
+        <div class="metric-unit">moderate</div>
+      </div>
+    </div>
+
+    <!-- Workouts -->
+    <div class="workouts-section">
+      <div class="section-header">
+        <div class="section-title">This Week's Workouts</div>
+      </div>
+      
+      <div class="workout-item">
+        <div class="workout-info">
+          <div class="workout-title">Easy Run</div>
+          <div class="workout-meta">
+            <span>Monday</span>
+            <span>8 km</span>
+            <span>~48 min</span>
+          </div>
+          <div class="profile-bar" style="margin-top: 8px;">
+            <div class="profile-seg seg-warmup" style="flex: 1;"></div>
+            <div class="profile-seg seg-easy" style="flex: 4;"></div>
+            <div class="profile-seg seg-warmup" style="flex: 1;"></div>
+          </div>
+        </div>
+        <div class="badge badge-success">✓ Synced</div>
+      </div>
+
+      <div class="workout-item">
+        <div class="workout-info">
+          <div class="workout-title">Threshold Intervals</div>
+          <div class="workout-meta">
+            <span>Wednesday</span>
+            <span>12 km</span>
+            <span>~65 min</span>
+          </div>
+          <div class="profile-bar" style="margin-top: 8px;">
+            <div class="profile-seg seg-warmup" style="flex: 1;"></div>
+            <div class="profile-seg seg-interval" style="flex: 3;"></div>
+            <div class="profile-seg seg-easy" style="flex: 1;"></div>
+            <div class="profile-seg seg-warmup" style="flex: 1;"></div>
+          </div>
+        </div>
+        <div class="badge badge-warn">⚠ Review</div>
+      </div>
+
+      <div class="workout-item">
+        <div class="workout-info">
+          <div class="workout-title">Long Slow Distance</div>
+          <div class="workout-meta">
+            <span>Sunday</span>
+            <span>18 km</span>
+            <span>~112 min</span>
+          </div>
+          <div class="profile-bar" style="margin-top: 8px;">
+            <div class="profile-seg seg-warmup" style="flex: 0.5;"></div>
+            <div class="profile-seg seg-easy" style="flex: 5;"></div>
+            <div class="profile-seg seg-warmup" style="flex: 0.5;"></div>
+          </div>
+        </div>
+        <button class="button">Sync</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

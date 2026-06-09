@@ -1,0 +1,373 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "components/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Badge'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|variant|size|className|key|ref|className|style|children)$/]",
+        "message": "<Badge> doesn't accept that prop. Declared props: children, variant, size, className."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Badge'] > JSXAttribute[name.name='variant'] > Literal[value!=/^(?:primary|success|warning|error|secondary)$/]",
+        "message": "<Badge> variant must be one of 'primary' | 'success' | 'warning' | 'error' | 'secondary'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Badge'] > JSXAttribute[name.name='size'] > Literal[value!=/^(?:sm|md|lg)$/]",
+        "message": "<Badge> size must be one of 'sm' | 'md' | 'lg'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Button'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|variant|size|disabled|onClick|className|key|ref|className|style|children)$/]",
+        "message": "<Button> doesn't accept that prop. Declared props: children, variant, size, disabled, onClick, className."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Button'] > JSXAttribute[name.name='variant'] > Literal[value!=/^(?:primary|secondary|ghost|danger)$/]",
+        "message": "<Button> variant must be one of 'primary' | 'secondary' | 'ghost' | 'danger'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Button'] > JSXAttribute[name.name='size'] > Literal[value!=/^(?:sm|md|lg)$/]",
+        "message": "<Button> size must be one of 'sm' | 'md' | 'lg'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|elevation|padding|className|onClick|key|ref|className|style|children)$/]",
+        "message": "<Card> doesn't accept that prop. Declared props: children, elevation, padding, className, onClick."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute[name.name='elevation'] > Literal[value!=/^(?:xs|sm|md|lg)$/]",
+        "message": "<Card> elevation must be one of 'xs' | 'sm' | 'md' | 'lg'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute[name.name='padding'] > Literal[value!=/^(?:sm|md|lg)$/]",
+        "message": "<Card> padding must be one of 'sm' | 'md' | 'lg'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Input'] > JSXAttribute > JSXIdentifier[name!=/^(?:type|placeholder|value|onChange|disabled|size|className|key|ref|className|style|children)$/]",
+        "message": "<Input> doesn't accept that prop. Declared props: type, placeholder, value, onChange, disabled, size, className."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Input'] > JSXAttribute[name.name='size'] > Literal[value!=/^(?:sm|md|lg)$/]",
+        "message": "<Input> size must be one of 'sm' | 'md' | 'lg'."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {
+      "Badge": {
+        "replaces": []
+      },
+      "Button": {
+        "replaces": []
+      },
+      "Card": {
+        "replaces": []
+      },
+      "Input": {
+        "replaces": []
+      }
+    },
+    "tokens": [
+      "--color-bg-code",
+      "--color-bg-hover",
+      "--color-bg-primary",
+      "--color-bg-secondary",
+      "--color-bg-subtle",
+      "--color-border-primary",
+      "--color-border-secondary",
+      "--color-error",
+      "--color-error-border",
+      "--color-error-light",
+      "--color-info",
+      "--color-info-border",
+      "--color-info-light",
+      "--color-primary",
+      "--color-primary-border",
+      "--color-primary-hover",
+      "--color-primary-light",
+      "--color-secondary",
+      "--color-secondary-border",
+      "--color-secondary-dim",
+      "--color-secondary-light",
+      "--color-sport-core",
+      "--color-sport-core-bg",
+      "--color-sport-cross",
+      "--color-sport-cross-bg",
+      "--color-sport-cycling",
+      "--color-sport-cycling-bg",
+      "--color-sport-mobility",
+      "--color-sport-mobility-bg",
+      "--color-sport-rest",
+      "--color-sport-rest-bg",
+      "--color-sport-running",
+      "--color-sport-running-bg",
+      "--color-sport-strength",
+      "--color-sport-strength-bg",
+      "--color-sport-swimming",
+      "--color-sport-swimming-bg",
+      "--color-sport-yoga",
+      "--color-sport-yoga-bg",
+      "--color-step-cooldown",
+      "--color-step-easy",
+      "--color-step-interval",
+      "--color-step-recovery",
+      "--color-step-rest",
+      "--color-step-warmup",
+      "--color-success",
+      "--color-success-border",
+      "--color-success-light",
+      "--color-text-primary",
+      "--color-text-quaternary",
+      "--color-text-secondary",
+      "--color-text-tertiary",
+      "--color-warn",
+      "--color-warn-border",
+      "--color-warn-light",
+      "--color-workout-aerobic",
+      "--color-workout-easy",
+      "--color-workout-lsd",
+      "--color-workout-rest",
+      "--color-workout-speed",
+      "--color-workout-strength",
+      "--color-workout-threshold",
+      "--ease-in-out",
+      "--ease-out",
+      "--focus-ring",
+      "--font-family-mono",
+      "--font-family-sans",
+      "--font-size-2xl",
+      "--font-size-3xl",
+      "--font-size-4xl",
+      "--font-size-5xl",
+      "--font-size-6xl",
+      "--font-size-base",
+      "--font-size-lg",
+      "--font-size-md",
+      "--font-size-sm",
+      "--font-size-xl",
+      "--font-size-xs",
+      "--font-weight-bold",
+      "--font-weight-medium",
+      "--font-weight-regular",
+      "--font-weight-semibold",
+      "--header-height",
+      "--letter-spacing-normal",
+      "--letter-spacing-tight",
+      "--letter-spacing-uppercase",
+      "--letter-spacing-wide",
+      "--line-height-normal",
+      "--line-height-relaxed",
+      "--line-height-tight",
+      "--panel-width-right",
+      "--radius-full",
+      "--radius-lg",
+      "--radius-md",
+      "--radius-sm",
+      "--radius-xs",
+      "--shadow-card",
+      "--shadow-lg",
+      "--shadow-md",
+      "--shadow-sm",
+      "--shadow-xl",
+      "--shadow-xs",
+      "--sidebar-width",
+      "--sidebar-width-compact",
+      "--space-0",
+      "--space-1",
+      "--space-10",
+      "--space-12",
+      "--space-14",
+      "--space-16",
+      "--space-2",
+      "--space-20",
+      "--space-24",
+      "--space-3",
+      "--space-4",
+      "--space-5",
+      "--space-6",
+      "--space-7",
+      "--space-8",
+      "--transition-base",
+      "--transition-fast",
+      "--transition-slow",
+      "--z-drawer",
+      "--z-drawer-backdrop",
+      "--z-dropdown",
+      "--z-fixed",
+      "--z-modal",
+      "--z-modal-backdrop",
+      "--z-sticky",
+      "--z-tooltip"
+    ],
+    "tokenKinds": {
+      "--color-primary": "color",
+      "--color-primary-hover": "color",
+      "--color-primary-light": "color",
+      "--color-primary-border": "color",
+      "--color-secondary": "color",
+      "--color-secondary-dim": "color",
+      "--color-secondary-light": "color",
+      "--color-secondary-border": "color",
+      "--color-success": "color",
+      "--color-success-light": "color",
+      "--color-success-border": "color",
+      "--color-warn": "color",
+      "--color-warn-light": "color",
+      "--color-warn-border": "color",
+      "--color-error": "color",
+      "--color-error-light": "color",
+      "--color-error-border": "color",
+      "--color-info": "color",
+      "--color-info-light": "color",
+      "--color-info-border": "color",
+      "--color-workout-easy": "color",
+      "--color-workout-aerobic": "color",
+      "--color-workout-threshold": "color",
+      "--color-workout-speed": "color",
+      "--color-workout-lsd": "color",
+      "--color-workout-strength": "color",
+      "--color-workout-rest": "color",
+      "--color-step-warmup": "color",
+      "--color-step-interval": "color",
+      "--color-step-recovery": "color",
+      "--color-step-cooldown": "color",
+      "--color-step-easy": "color",
+      "--color-step-rest": "color",
+      "--color-bg-primary": "color",
+      "--color-bg-secondary": "color",
+      "--color-bg-subtle": "color",
+      "--color-bg-hover": "color",
+      "--color-bg-code": "color",
+      "--color-border-primary": "color",
+      "--color-border-secondary": "color",
+      "--color-text-primary": "font",
+      "--color-text-secondary": "font",
+      "--color-text-tertiary": "font",
+      "--color-text-quaternary": "font",
+      "--color-sport-running": "color",
+      "--color-sport-running-bg": "color",
+      "--color-sport-strength": "color",
+      "--color-sport-strength-bg": "color",
+      "--color-sport-core": "color",
+      "--color-sport-core-bg": "color",
+      "--color-sport-cycling": "color",
+      "--color-sport-cycling-bg": "color",
+      "--color-sport-swimming": "color",
+      "--color-sport-swimming-bg": "color",
+      "--color-sport-yoga": "color",
+      "--color-sport-yoga-bg": "color",
+      "--color-sport-mobility": "color",
+      "--color-sport-mobility-bg": "color",
+      "--color-sport-cross": "color",
+      "--color-sport-cross-bg": "color",
+      "--color-sport-rest": "color",
+      "--color-sport-rest-bg": "color",
+      "--font-family-sans": "font",
+      "--font-family-mono": "font",
+      "--font-size-xs": "font",
+      "--font-size-sm": "font",
+      "--font-size-base": "font",
+      "--font-size-md": "font",
+      "--font-size-lg": "font",
+      "--font-size-xl": "font",
+      "--font-size-2xl": "font",
+      "--font-size-3xl": "font",
+      "--font-size-4xl": "font",
+      "--font-size-5xl": "font",
+      "--font-size-6xl": "font",
+      "--font-weight-regular": "font",
+      "--font-weight-medium": "font",
+      "--font-weight-semibold": "font",
+      "--font-weight-bold": "font",
+      "--line-height-tight": "font",
+      "--line-height-normal": "font",
+      "--line-height-relaxed": "font",
+      "--letter-spacing-tight": "font",
+      "--letter-spacing-normal": "font",
+      "--letter-spacing-wide": "font",
+      "--letter-spacing-uppercase": "font",
+      "--space-0": "spacing",
+      "--space-1": "spacing",
+      "--space-2": "spacing",
+      "--space-3": "spacing",
+      "--space-4": "spacing",
+      "--space-5": "spacing",
+      "--space-6": "spacing",
+      "--space-7": "spacing",
+      "--space-8": "spacing",
+      "--space-10": "spacing",
+      "--space-12": "spacing",
+      "--space-14": "spacing",
+      "--space-16": "spacing",
+      "--space-20": "spacing",
+      "--space-24": "spacing",
+      "--radius-xs": "radius",
+      "--radius-sm": "radius",
+      "--radius-md": "radius",
+      "--radius-lg": "radius",
+      "--radius-full": "radius",
+      "--header-height": "spacing",
+      "--sidebar-width": "spacing",
+      "--sidebar-width-compact": "spacing",
+      "--panel-width-right": "spacing",
+      "--z-dropdown": "other",
+      "--z-sticky": "other",
+      "--z-fixed": "other",
+      "--z-modal-backdrop": "other",
+      "--z-modal": "other",
+      "--z-drawer-backdrop": "other",
+      "--z-drawer": "other",
+      "--z-tooltip": "other",
+      "--transition-fast": "other",
+      "--transition-base": "other",
+      "--transition-slow": "other",
+      "--ease-out": "other",
+      "--ease-in-out": "other",
+      "--shadow-xs": "shadow",
+      "--shadow-sm": "shadow",
+      "--shadow-md": "shadow",
+      "--shadow-lg": "shadow",
+      "--shadow-xl": "shadow",
+      "--shadow-card": "shadow",
+      "--focus-ring": "shadow"
+    },
+    "fontFamilies": []
+  }
+}

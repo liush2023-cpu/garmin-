@@ -1,0 +1,59 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   佳明小工具 Design System — Global Styles
+   Entry point for all tokens and imports
+   ───────────────────────────────────────────────────────────────────────── */
+
+@import 'tokens/colors.css';
+@import 'tokens/typography.css';
+@import 'tokens/spacing.css';
+@import 'tokens/shadows.css';
+
+/* ─── Reset ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+/* ─── Focus Styles ────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ─── Scrollbar Styling ─────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-secondary);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-primary);
+}

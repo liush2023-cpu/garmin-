@@ -1,0 +1,88 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   佳明小工具 — Colors
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ─── Primary Brand ─────────────────────────────────────────────────── */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-light: #EFF6FF;
+  --color-primary-border: #BFDBFE;
+  
+  /* Secondary accent (orange for action, emphasis) */
+  --color-secondary: #E8590C;
+  --color-secondary-dim: #F97316;
+  --color-secondary-light: rgba(232, 89, 12, 0.08);
+  --color-secondary-border: rgba(232, 89, 12, 0.35);
+
+  /* ─── Semantic Signals ──────────────────────────────────────────────── */
+  --color-success: #16A34A;
+  --color-success-light: #DCFCE7;
+  --color-success-border: #BBF7D0;
+  
+  --color-warn: #D97706;
+  --color-warn-light: #FFFBEB;
+  --color-warn-border: #FDE68A;
+  
+  --color-error: #DC2626;
+  --color-error-light: #FEF2F2;
+  --color-error-border: #FECACA;
+  
+  --color-info: #3B82F6;
+  --color-info-light: #EFF6FF;
+  --color-info-border: #BFDBFE;
+
+  /* ─── Training Type Colors (for workout classification) ──────────────── */
+  --color-workout-easy: #16A34A;
+  --color-workout-aerobic: #2563EB;
+  --color-workout-threshold: #DC2626;
+  --color-workout-speed: #C2410C;
+  --color-workout-lsd: #7C3AED;
+  --color-workout-strength: #334155;
+  --color-workout-rest: #94A3B8;
+
+  /* Step type colors (for profile bars) */
+  --color-step-warmup: #93C5FD;
+  --color-step-interval: #F87171;
+  --color-step-recovery: #6EE7B7;
+  --color-step-cooldown: #93C5FD;
+  --color-step-easy: #6EE7B7;
+  --color-step-rest: #CBD5E1;
+
+  /* ─── Surfaces & Backgrounds ───────────────────────────────────────── */
+  --color-bg-primary: #F6F8FB;
+  --color-bg-secondary: #FFFFFF;
+  --color-bg-subtle: #F1F4F8;
+  --color-bg-hover: #E8EDF4;
+  --color-bg-code: #F3F4F6;
+
+  /* ─── Borders ────────────────────────────────────────────────────────── */
+  --color-border-primary: #E2E8F0;
+  --color-border-secondary: #CBD5E1;
+
+  /* ─── Text ──────────────────────────────────────────────────────────── */
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #334155;
+  --color-text-tertiary: #64748B;
+  --color-text-quaternary: #94A3B8;
+
+  /* ─── Sport Type Colors ────────────────────────────────────────────── */
+  --color-sport-running: #1D4ED8;
+  --color-sport-running-bg: #DBEAFE;
+  --color-sport-strength: #374151;
+  --color-sport-strength-bg: #F3F4F6;
+  --color-sport-core: #92400E;
+  --color-sport-core-bg: #FEF3C7;
+  --color-sport-cycling: #5B21B6;
+  --color-sport-cycling-bg: #EDE9FE;
+  --color-sport-swimming: #0E7490;
+  --color-sport-swimming-bg: #CFFAFE;
+  --color-sport-yoga: #6D28D9;
+  --color-sport-yoga-bg: #EDE9FE;
+  --color-sport-mobility: #047857;
+  --color-sport-mobility-bg: #D1FAE5;
+  --color-sport-cross: #B45309;
+  --color-sport-cross-bg: #FEF3C7;
+  --color-sport-rest: #9CA3AF;
+  --color-sport-rest-bg: #F9FAFB;
+}

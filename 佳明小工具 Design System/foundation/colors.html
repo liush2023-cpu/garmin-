@@ -1,0 +1,79 @@
+<!-- @dsCard group="Colors" viewport="700x400" name="Color Palette" -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Color Palette</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body {
+      padding: 40px;
+      background: var(--color-bg-primary);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 16px;
+    }
+    .color-swatch {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .swatch {
+      width: 100%;
+      height: 80px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border-primary);
+      box-shadow: var(--shadow-sm);
+    }
+    .label {
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .value {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+      font-family: var(--font-family-mono);
+    }
+  </style>
+</head>
+<body>
+  <div class="grid">
+    <div class="color-swatch">
+      <div class="swatch" style="background: var(--color-primary);"></div>
+      <div class="label">Primary</div>
+      <div class="value">#2563EB</div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background: var(--color-secondary);"></div>
+      <div class="label">Secondary</div>
+      <div class="value">#E8590C</div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background: var(--color-success);"></div>
+      <div class="label">Success</div>
+      <div class="value">#16A34A</div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background: var(--color-warn);"></div>
+      <div class="label">Warning</div>
+      <div class="value">#D97706</div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background: var(--color-error);"></div>
+      <div class="label">Error</div>
+      <div class="value">#DC2626</div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background: var(--color-text-primary);"></div>
+      <div class="label">Text Primary</div>
+      <div class="value">#0F172A</div>
+    </div>
+  </div>
+</body>
+</html>

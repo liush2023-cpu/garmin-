@@ -1,0 +1,462 @@
+<!-- @startingPoint section="Training" subtitle="Main interface for syncing AI-generated plans to Garmin" viewport="800x1200" -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — 佳明小工具</title>
+  <link rel="stylesheet" href="../../styles.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-base);
+    }
+
+    .app-layout {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      grid-template-rows: 60px 1fr;
+      height: 100vh;
+      gap: 0;
+    }
+
+    .header {
+      grid-column: 1 / -1;
+      background: var(--color-bg-secondary);
+      border-bottom: 1px solid var(--color-border-primary);
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: var(--font-weight-bold);
+      font-size: var(--font-size-lg);
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--color-primary);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary-border);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--color-success);
+      border-radius: 50%;
+    }
+
+    .panel {
+      background: var(--color-bg-secondary);
+      border-right: 1px solid var(--color-border-primary);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel:last-child {
+      border-right: none;
+    }
+
+    .panel__header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-border-primary);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .panel__body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+    }
+
+    .input-group {
+      margin-bottom: 12px;
+    }
+
+    .input-label {
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-text-quaternary);
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid var(--color-border-primary);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-base);
+      color: var(--color-text-primary);
+      background: var(--color-bg-secondary);
+      outline: none;
+      transition: border-color 0.12s;
+    }
+
+    .input-field:focus {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    .textarea-field {
+      width: 100%;
+      min-height: 120px;
+      padding: 10px;
+      border: 1px solid var(--color-border-primary);
+      border-radius: var(--color-radius-sm);
+      font-family: var(--font-family-mono);
+      font-size: var(--font-size-sm);
+      resize: vertical;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border: 1px solid var(--color-primary);
+      background: var(--color-primary);
+      color: white;
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      cursor: pointer;
+      transition: background 0.12s;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .button:hover {
+      background: var(--color-primary-hover);
+    }
+
+    .button--secondary {
+      background: var(--color-bg-subtle);
+      color: var(--color-text-secondary);
+      border-color: var(--color-border-primary);
+    }
+
+    .button--secondary:hover {
+      background: var(--color-bg-hover);
+    }
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .workout-card {
+      background: var(--color-bg-subtle);
+      border: 1px solid var(--color-border-primary);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      cursor: pointer;
+      transition: background 0.12s, box-shadow 0.12s;
+    }
+
+    .workout-card:hover {
+      background: var(--color-bg-hover);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .workout-date {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-quaternary);
+      font-weight: var(--font-weight-medium);
+      margin-bottom: 4px;
+    }
+
+    .workout-title {
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      margin-bottom: 6px;
+    }
+
+    .workout-stats {
+      display: flex;
+      gap: 12px;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+    }
+
+    .profile-bar {
+      display: flex;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      gap: 1px;
+      margin-top: 8px;
+    }
+
+    .profile-seg {
+      flex: 1;
+      border-radius: 2px;
+    }
+
+    .seg-warmup { background: var(--color-step-warmup); }
+    .seg-interval { background: var(--color-step-interval); }
+    .seg-easy { background: var(--color-step-easy); }
+    .seg-recovery { background: var(--color-step-recovery); }
+
+    .metrics-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--color-border-primary);
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .metric-value {
+      font-size: 16px;
+      font-weight: var(--font-weight-bold);
+      color: var(--color-text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-label {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-quaternary);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: var(--radius-xs);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+
+    .badge-success {
+      background: var(--color-success-light);
+      color: var(--color-success);
+    }
+
+    .badge-warn {
+      background: var(--color-warn-light);
+      color: var(--color-warn);
+    }
+
+    .panel__footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--color-border-primary);
+      display: flex;
+      gap: 8px;
+    }
+
+    .center-panel {
+      background: var(--color-bg-primary);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .center-panel__header {
+      background: var(--color-bg-secondary);
+      border-bottom: 1px solid var(--color-border-primary);
+      padding: 12px 16px;
+    }
+
+    .center-panel__body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: var(--color-text-tertiary);
+      text-align: center;
+    }
+
+    .empty-icon {
+      font-size: 32px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Header -->
+    <div class="header">
+      <div class="brand">
+        <div class="brand-icon">📊</div>
+        佳明小工具
+      </div>
+      <div class="header-right">
+        <div class="status-badge">
+          <div class="status-dot"></div>
+          Garmin Connected
+        </div>
+      </div>
+    </div>
+
+    <!-- Left Panel: Input -->
+    <div class="panel">
+      <div class="panel__header">Training Plan Input</div>
+      <div class="panel__body">
+        <div class="input-group">
+          <label class="input-label">Plan Name</label>
+          <input class="input-field" type="text" placeholder="e.g., Marathon Training Week 4">
+        </div>
+        <div class="input-group">
+          <label class="input-label">Paste Plan (Text or JSON)</label>
+          <textarea class="textarea-field" placeholder="Paste your AI-generated plan or JSON..."></textarea>
+        </div>
+      </div>
+      <div class="panel__footer">
+        <button class="button button--secondary" style="flex: 1;">Clear</button>
+        <button class="button" style="flex: 2;">Parse Plan</button>
+      </div>
+    </div>
+
+    <!-- Center Panel: Timeline -->
+    <div class="center-panel">
+      <div class="center-panel__header">
+        <div style="font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">Weekly Workouts</div>
+      </div>
+      <div class="center-panel__body">
+        <div class="timeline">
+          <div class="workout-card">
+            <div class="workout-date">Monday, Dec 4</div>
+            <div class="workout-title">Easy Run</div>
+            <div class="workout-stats">
+              <span>8 km</span>
+              <span>~48 min</span>
+              <span>Easy pace</span>
+            </div>
+            <div class="profile-bar">
+              <div class="profile-seg seg-warmup" style="flex: 0.5;"></div>
+              <div class="profile-seg seg-easy" style="flex: 4;"></div>
+              <div class="profile-seg seg-warmup" style="flex: 0.5;"></div>
+            </div>
+          </div>
+
+          <div class="workout-card">
+            <div class="workout-date">Wednesday, Dec 6</div>
+            <div class="workout-title">Threshold Intervals</div>
+            <div class="workout-stats">
+              <span>12 km</span>
+              <span>~65 min</span>
+              <span>Threshold</span>
+            </div>
+            <div class="profile-bar">
+              <div class="profile-seg seg-warmup" style="flex: 1;"></div>
+              <div class="profile-seg seg-interval" style="flex: 3;"></div>
+              <div class="profile-seg seg-easy" style="flex: 1;"></div>
+              <div class="profile-seg seg-warmup" style="flex: 1;"></div>
+            </div>
+          </div>
+
+          <div class="workout-card">
+            <div class="workout-date">Sunday, Dec 10</div>
+            <div class="workout-title">Long Slow Distance</div>
+            <div class="workout-stats">
+              <span>18 km</span>
+              <span>~112 min</span>
+              <span>Easy pace</span>
+            </div>
+            <div class="profile-bar">
+              <div class="profile-seg seg-warmup" style="flex: 0.5;"></div>
+              <div class="profile-seg seg-easy" style="flex: 5;"></div>
+              <div class="profile-seg seg-warmup" style="flex: 0.5;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel: Sync -->
+    <div class="panel">
+      <div class="panel__header">Sync to Garmin</div>
+      <div class="panel__body">
+        <div class="metrics-row" style="border: none;">
+          <div class="metric">
+            <div class="metric-value">6</div>
+            <div class="metric-label">Workouts</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value">42</div>
+            <div class="metric-label">km</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value">0</div>
+            <div class="metric-label">Issues</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 16px;">
+          <div class="input-label" style="margin-bottom: 8px;">Account</div>
+          <div style="background: var(--color-bg-subtle); border: 1px solid var(--color-border-primary); border-radius: var(--radius-sm); padding: 10px; font-size: var(--font-size-sm); margin-bottom: 12px;">
+            <div style="font-weight: var(--font-weight-medium); color: var(--color-text-primary);">user@garmin.com</div>
+            <div style="font-size: var(--font-size-xs); color: var(--color-text-tertiary); margin-top: 2px;">Connected ✓</div>
+          </div>
+
+          <div style="background: var(--color-success-light); border: 1px solid var(--color-success-border); border-radius: var(--radius-sm); padding: 10px; font-size: var(--font-size-xs); color: var(--color-success); margin-bottom: 16px;">
+            ✓ All workouts ready to sync
+          </div>
+        </div>
+      </div>
+      <div class="panel__footer">
+        <button class="button" style="flex: 1;">Sync to Garmin</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

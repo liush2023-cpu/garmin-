@@ -1,0 +1,69 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   佳明小工具 — Spacing & Layout
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ─── Base Spacing Scale ────────────────────────────────────────────── */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-14: 28px;
+  --space-16: 32px;
+  --space-20: 40px;
+  --space-24: 48px;
+
+  /* ─── Border Radius ─────────────────────────────────────────────────── */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* ─── Layout Dimensions ────────────────────────────────────────────── */
+  --header-height: 60px;
+  --sidebar-width: 320px;
+  --sidebar-width-compact: 280px;
+  --panel-width-right: 340px;
+
+  /* ─── Z-index Scale ────────────────────────────────────────────────── */
+  --z-dropdown: 10; /* @kind other */
+  --z-sticky: 20; /* @kind other */
+  --z-fixed: 100; /* @kind other */
+  --z-modal-backdrop: 200; /* @kind other */
+  --z-modal: 201; /* @kind other */
+  --z-drawer-backdrop: 300; /* @kind other */
+  --z-drawer: 301; /* @kind other */
+  --z-tooltip: 1000; /* @kind other */
+
+  /* ─── Transitions ──────────────────────────────────────────────────── */
+  --transition-fast: 0.12s; /* @kind other */
+  --transition-base: 0.2s; /* @kind other */
+  --transition-slow: 0.3s; /* @kind other */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.6, 1); /* @kind other */
+}
+
+/* Utility classes */
+.gap-sm { gap: var(--space-4); }
+.gap-md { gap: var(--space-8); }
+.gap-lg { gap: var(--space-12); }
+
+.p-sm { padding: var(--space-6); }
+.p-md { padding: var(--space-8); }
+.p-lg { padding: var(--space-12); }
+
+.m-sm { margin: var(--space-6); }
+.m-md { margin: var(--space-8); }
+.m-lg { margin: var(--space-12); }
+
+.rounded-sm { border-radius: var(--radius-sm); }
+.rounded-md { border-radius: var(--radius-md); }
+.rounded-lg { border-radius: var(--radius-lg); }

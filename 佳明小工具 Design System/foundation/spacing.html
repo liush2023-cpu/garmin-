@@ -1,0 +1,74 @@
+<!-- @dsCard group="Spacing" viewport="700x280" name="Spacing Scale" -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spacing</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body {
+      padding: 40px;
+      background: var(--color-bg-primary);
+    }
+    .scales {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .scale {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .label {
+      min-width: 80px;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-quaternary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .bar {
+      background: var(--color-primary);
+      height: 24px;
+      border-radius: var(--radius-xs);
+    }
+    .value {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+      font-family: var(--font-family-mono);
+      min-width: 40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="scales">
+    <div class="scale">
+      <div class="label">4px</div>
+      <div class="bar" style="width: 40px;"></div>
+      <div class="value">1x</div>
+    </div>
+    <div class="scale">
+      <div class="label">8px</div>
+      <div class="bar" style="width: 80px;"></div>
+      <div class="value">2x</div>
+    </div>
+    <div class="scale">
+      <div class="label">12px</div>
+      <div class="bar" style="width: 120px;"></div>
+      <div class="value">3x</div>
+    </div>
+    <div class="scale">
+      <div class="label">16px</div>
+      <div class="bar" style="width: 160px;"></div>
+      <div class="value">4x</div>
+    </div>
+    <div class="scale">
+      <div class="label">24px</div>
+      <div class="bar" style="width: 240px;"></div>
+      <div class="value">6x</div>
+    </div>
+  </div>
+</body>
+</html>
