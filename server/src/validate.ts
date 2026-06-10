@@ -1,24 +1,15 @@
 /**
  * 轻量级请求体校验 —— 零依赖，每个路由一个专用校验函数。
- *
- * 返回值约定：
- *   { ok: true,  data: T }          — 校验通过，data 为清洗后的类型安全数据
- *   { ok: false, error: string, status: number } — 校验失败
  */
 
 import type { GeneratePlanParams } from "./parse.js";
 
-// ── 通用辅助 ────────────────────────────────────────────────────────────────
-
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
-
 function isPositiveNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v) && v > 0;
 }
-
-// ── 校验结果类型 ────────────────────────────────────────────────────────────
 
 type ValidateOk<T> = { ok: true; data: T };
 type ValidateFail = { ok: false; error: string; status: number };
@@ -43,7 +34,6 @@ export function validateParseBody(body: unknown): ValidateResult<ParseBody> {
   if (!isNonEmptyString(planText)) return fail("缺少 planText（非空字符串）");
   if (!isNonEmptyString(baseUrl))   return fail("缺少 baseUrl（非空字符串）");
   if (!isNonEmptyString(model))     return fail("缺少 model（非空字符串）");
-  // apiKey 允许为空，路由层会尝试用服务端环境变量补全
   return { ok: true, data: { planText: planText.trim(), baseUrl: baseUrl.trim(), apiKey: typeof apiKey === "string" ? apiKey.trim() : "", model: model.trim() } };
 }
 
@@ -61,7 +51,6 @@ export function validateGenerateBody(body: unknown): ValidateResult<GenerateBody
   const { goalParams, baseUrl, apiKey, model } = body as Record<string, unknown>;
 
   if (!isNonEmptyString(baseUrl)) return fail("缺少 baseUrl（非空字符串）");
-  // apiKey 允许为空，路由层会尝试用服务端环境变量补全
   if (!isNonEmptyString(model))   return fail("缺少 model（非空字符串）");
   const safeApiKey = typeof apiKey === "string" ? apiKey.trim() : "";
 
@@ -83,7 +72,6 @@ export function validateGenerateBody(body: unknown): ValidateResult<GenerateBody
     };
   }
 
-  // mode === "week"
   const days = Number(gp.daysPerWeek);
   const km = Number(gp.weeklyDistanceKm);
   if (!Number.isFinite(days) || days < 1 || days > 7) return fail("goalParams.daysPerWeek 必须是 1-7 的整数");
@@ -146,6 +134,10 @@ export interface SyncBody {
       type: string;
       distanceMeters?: number;
       durationSeconds?: number;
+      targetPace?: string;
+      targetHeartRate?: string;
+      repeat?: number;
+      notes?: string;
       [key: string]: unknown;
     }>;
   }>;
@@ -153,30 +145,88 @@ export interface SyncBody {
 
 const VALID_STEP_TYPES = new Set(["warmup", "interval", "recovery", "cooldown", "easy", "rest"]);
 
+function extractBpmValues(hr: string): number[] {
+  return (hr.match(/\d{2,3}/g) ?? []).map(Number).filter(Number.isFinite);
+}
+
 export function validateSyncBody(body: unknown): ValidateResult<SyncBody> {
   if (typeof body !== "object" || body === null) return fail("请求体必须是 JSON 对象");
   const { plan } = body as Record<string, unknown>;
   if (typeof plan !== "object" || plan === null) return fail("缺少 plan 对象");
   const { workouts } = plan as Record<string, unknown>;
   if (!Array.isArray(workouts)) return fail("缺少 plan.workouts 数组");
+  if (workouts.length === 0) return fail("workouts 数组不能为空");
+  if (workouts.length > 100) return fail("workouts 最多支持 100 条");
 
   for (let i = 0; i < workouts.length; i++) {
     const w = workouts[i];
     if (typeof w !== "object" || w === null) return fail(`workouts[${i}] 必须是对象`);
+
+    // 日期
     if (typeof w.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(w.date)) {
       return fail(`workouts[${i}].date 必须是 YYYY-MM-DD 格式`);
     }
-    if (typeof w.title !== "string") return fail(`workouts[${i}].title 必须是字符串`);
+    const parsedDate = new Date(w.date + "T00:00:00");
+    if (isNaN(parsedDate.getTime())) return fail(`workouts[${i}].date 日期不合法：${w.date}`);
+    const yearDiff = Math.abs(parsedDate.getFullYear() - new Date().getFullYear());
+    if (yearDiff > 5) return fail(`workouts[${i}].date 日期超出合理范围（±5年）：${w.date}`);
+
+    // 标题
+    if (typeof w.title !== "string" || w.title.trim().length === 0) {
+      return fail(`workouts[${i}].title 必须是非空字符串`);
+    }
+    if (w.title.length > 200) return fail(`workouts[${i}].title 超过最大长度 200`);
+
+    // 步骤
     if (!Array.isArray(w.steps)) return fail(`workouts[${i}].steps 必须是数组`);
+    if (w.steps.length > 200) return fail(`workouts[${i}].steps 最多支持 200 步`);
 
     for (let j = 0; j < w.steps.length; j++) {
       const s = w.steps[j];
-      if (typeof s !== "object" || s === null) return fail(`workouts[${i}].steps[${j}] 必须是对象`);
+      const loc = `workouts[${i}].steps[${j}]`;
+      if (typeof s !== "object" || s === null) return fail(`${loc} 必须是对象`);
+
       if (typeof s.type !== "string" || !VALID_STEP_TYPES.has(s.type)) {
-        return fail(`workouts[${i}].steps[${j}].type 无效，必须是：${[...VALID_STEP_TYPES].join(", ")}`);
+        return fail(`${loc}.type 无效，必须是：${[...VALID_STEP_TYPES].join(", ")}`);
       }
+
       if (s.distanceMeters == null && s.durationSeconds == null) {
-        return fail(`workouts[${i}].steps[${j}] 必须包含 distanceMeters 或 durationSeconds 之一`);
+        return fail(`${loc} 必须包含 distanceMeters 或 durationSeconds 之一`);
+      }
+      if (s.distanceMeters != null) {
+        if (typeof s.distanceMeters !== "number" || !Number.isFinite(s.distanceMeters) || s.distanceMeters <= 0)
+          return fail(`${loc}.distanceMeters 必须是正数（单位：米）`);
+        if (s.distanceMeters > 200_000)
+          return fail(`${loc}.distanceMeters 超过 200km，请检查单位是否正确（应为米）`);
+      }
+      if (s.durationSeconds != null) {
+        if (typeof s.durationSeconds !== "number" || !Number.isFinite(s.durationSeconds) || s.durationSeconds <= 0)
+          return fail(`${loc}.durationSeconds 必须是正数（单位：秒）`);
+        if (s.durationSeconds > 86_400)
+          return fail(`${loc}.durationSeconds 超过 24 小时，请检查单位是否正确（应为秒）`);
+      }
+
+      if (s.targetPace != null) {
+        if (typeof s.targetPace !== "string") return fail(`${loc}.targetPace 必须是字符串`);
+        if (s.targetPace.trim() && !/\d{1,2}:\d{2}/.test(s.targetPace)) {
+          return fail(`${loc}.targetPace 格式不正确："${s.targetPace}"，期望如 "5:30/km" 或 "5:00-5:30/km"`);
+        }
+      }
+
+      if (s.targetHeartRate != null) {
+        if (typeof s.targetHeartRate !== "string") return fail(`${loc}.targetHeartRate 必须是字符串`);
+        const bpms = extractBpmValues(s.targetHeartRate);
+        for (const bpm of bpms) {
+          if (bpm < 30 || bpm > 250)
+            return fail(`${loc}.targetHeartRate 包含不合理的心率值 ${bpm}，正常范围 30-250 bpm`);
+        }
+        if (bpms.length === 2 && bpms[0] > bpms[1])
+          return fail(`${loc}.targetHeartRate 区间低值(${bpms[0]})大于高值(${bpms[1]})`);
+      }
+
+      if (s.repeat != null) {
+        if (typeof s.repeat !== "number" || !Number.isInteger(s.repeat) || s.repeat < 2 || s.repeat > 100)
+          return fail(`${loc}.repeat 必须是 2-100 之间的整数`);
       }
     }
   }
@@ -195,9 +245,8 @@ export function validateDeleteBody(body: unknown): ValidateResult<DeleteBody> {
   const { workoutIds } = body as Record<string, unknown>;
   if (!Array.isArray(workoutIds) || workoutIds.length === 0) return fail("缺少 workoutIds（非空数组）");
   for (let i = 0; i < workoutIds.length; i++) {
-    if (typeof workoutIds[i] !== "string" || !(workoutIds[i] as string).trim()) {
+    if (typeof workoutIds[i] !== "string" || !(workoutIds[i] as string).trim())
       return fail(`workoutIds[${i}] 必须是非空字符串`);
-    }
   }
   return { ok: true, data: { workoutIds: workoutIds as string[] } };
 }

@@ -1166,6 +1166,65 @@ body { min-height: 100vh; }
   .app-main { grid-template-columns: 280px 1fr 300px; }
 }
 
+/* ── 安全提示 ─────────────────────────────────────────────────────────── */
+.security-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 11px;
+}
+.security-notice__icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.security-notice__title { font-weight: 600; color: #92400E; margin-bottom: 3px; }
+.security-notice__body { color: #78350F; line-height: 1.55; }
+
+/* ── 设置面板数据管理区 ─────────────────────────────────────────────────── */
+.settings-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.settings-section-title {
+  font-size: 10px; font-weight: 700;
+  color: var(--tx-4);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+.settings-clear-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.settings-clear-btn {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+  color: var(--error) !important;
+  border-color: var(--error-bd) !important;
+}
+.settings-clear-btn:hover { background: var(--error-bg) !important; }
+
+/* ── 周统计行 ──────────────────────────────────────────────────────────── */
+.week-strip__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 12px 6px;
+  border-top: 1px solid var(--border);
+}
+.week-strip__stat {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx-2);
+  background: var(--bg-subtle);
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 移动端增强 ─────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   html, body {
     overflow-x: hidden;
@@ -1195,9 +1254,10 @@ body { min-height: 100vh; }
     border-bottom: 1px solid var(--border);
   }
   .mobile-tab {
-    flex: 1; padding: 11px;
+    flex: 1; padding: 13px 4px;
     border: none; background: none;
     font-size: 13px; font-weight: 500; color: var(--tx-3); cursor: pointer;
+    min-height: 44px; /* touch target */
   }
   .mobile-tab--active { color: var(--accent); border-bottom: 2px solid var(--accent); }
   .header-metrics { display: none; }
@@ -1205,4 +1265,54 @@ body { min-height: 100vh; }
   .wo-card__detail { padding-left: 0; }
   .sync-metrics { grid-template-columns: 1fr; }
   .device-panel-header { display: none; }
+
+  /* Header: 在移动端收窄 */
+  .app-header { padding: 0 12px; gap: 6px; }
+  .app-header__brand { font-size: 13px; }
+  .app-header__brand-icon { width: 24px; height: 24px; }
+  .app-header__right { gap: 4px; }
+  .app-header__right .btn--sm { padding: 4px 8px; font-size: 11px; }
+  .status-badge { font-size: 11px; padding: 4px 8px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Modal: 全屏友好 */
+  .modal-card {
+    width: calc(100vw - 24px) !important;
+    max-width: 100% !important;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* StepEditor: 允许换行 */
+  .step-editor__row {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .step-editor__type { width: 100%; }
+  .step-editor__num { width: calc(50% - 4px); min-width: 70px; flex: none; }
+  .step-editor__pace { width: calc(50% - 4px); min-width: 70px; flex: none; }
+  .step-editor__repeat { width: 70px; }
+
+  /* WO card actions: always visible on mobile */
+  .wo-card__actions { opacity: 1 !important; }
+  .wo-card__actions .btn--ghost { min-height: 36px; }
+
+  /* Confirm block buttons: stack */
+  .confirm-block__actions { flex-direction: column; }
+  .confirm-block__actions .btn { width: 100%; }
+
+  /* Edit drawer: full screen */
+  .edit-drawer {
+    width: 100% !important;
+    right: 0 !important;
+    border-radius: 0 !important;
+    max-height: 95vh;
+  }
+
+  /* Security notice: smaller */
+  .security-notice { font-size: 10px; }
+  .security-notice__icon { font-size: 14px; }
+
+  /* Settings clear row: full width buttons */
+  .settings-clear-row { flex-direction: column; }
+  .settings-clear-btn { width: 100%; text-align: center; }
 }

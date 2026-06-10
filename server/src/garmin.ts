@@ -244,6 +244,18 @@ export interface SyncResult {
   workoutId?: string;
 }
 
+/** 将 Garmin 非官方 API 错误包装为更友好的中文提示 */
+function friendlyGarminError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/401|unauthorized|unauthenticated/i.test(raw)) return "Garmin 会话已失效，请重新登录后再同步";
+  if (/403|forbidden/i.test(raw)) return "Garmin 拒绝请求（权限不足），请重新登录";
+  if (/429|too many/i.test(raw)) return "Garmin 接口请求过于频繁，请稍等几分钟后重试";
+  if (/timeout|ECONNRESET|ETIMEDOUT/i.test(raw)) return `Garmin 接口超时：${raw}`;
+  if (/ENOTFOUND|ECONNREFUSED|getaddrinfo/i.test(raw)) return "无法连接到 Garmin 服务器，请检查网络连接";
+  if (/workoutId/i.test(raw)) return "Garmin 服务未返回训练 ID，训练可能已创建但未确认，请到 Garmin Connect 检查";
+  return `Garmin API 错误：${raw}`;
+}
+
 export async function syncWorkouts(workouts: PlannedWorkout[]): Promise<SyncResult[]> {
   if (!client) throw new Error("尚未登录 Garmin");
 
@@ -264,7 +276,7 @@ export async function syncWorkouts(workouts: PlannedWorkout[]): Promise<SyncResu
         date: workout.date,
         title: workout.title,
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: friendlyGarminError(err),
       });
     }
   }
@@ -286,7 +298,7 @@ export async function deleteWorkouts(workoutIds: string[]): Promise<DeleteResult
       await client.deleteWorkout({ workoutId });
       results.push({ workoutId, ok: true });
     } catch (err) {
-      results.push({ workoutId, ok: false, error: err instanceof Error ? err.message : String(err) });
+      results.push({ workoutId, ok: false, error: friendlyGarminError(err) });
     }
   }
   return results;

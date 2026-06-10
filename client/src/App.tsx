@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, type ChangeEvent } from 'react'
 import type { TrainingPlan, PlannedWorkout, WorkoutStep, SyncResult, StepType } from './types'
+import { checkPlanSanity, type SanityIssue } from './lib/validate'
 import './App.css'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -316,6 +317,13 @@ function computeWarnings(plan: TrainingPlan, hrZones: HrZones): Warning[] {
   const hrEmpty = !Object.values(hrZones).some(v => v.trim())
   if (plan.workouts.some(wo => wo.steps.some(s => s.targetHeartRate && /Z\d/i.test(s.targetHeartRate))) && hrEmpty)
     w.push({ level: 'warn', msg: '训练步骤包含 Z1-Z5 心率区间引用，但未填写心率区间映射。' })
+
+  // AI 内容合理性检查
+  const sanityIssues: SanityIssue[] = checkPlanSanity(plan)
+  for (const issue of sanityIssues) {
+    w.push({ level: issue.level === 'error' ? 'error' : issue.level === 'warn' ? 'warn' : 'info', msg: issue.msg })
+  }
+
   return w
 }
 
@@ -935,6 +943,27 @@ export default function App() {
                 <input type="text" value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-chat" />
               </label>
               {llmReady && <p style={{ fontSize: 11, color: 'var(--success)', marginTop: 4 }}>✓ 接口已配置</p>}
+
+              {/* 数据管理 */}
+              <div className="settings-divider" />
+              <div className="settings-section-title">本地数据管理</div>
+              <div className="settings-clear-row">
+                <button className="btn btn--ghost btn--sm settings-clear-btn" onClick={() => {
+                  ls.del(LLM_CONFIG_KEY)
+                  setPreset('deepseek'); setLlmApiKey(''); setProvider('deepseek')
+                }}>清除模型配置</button>
+                <button className="btn btn--ghost btn--sm settings-clear-btn" onClick={() => {
+                  ls.del(GARMIN_SESSION_KEY); ls.del(GARMIN_ACCOUNT_KEY)
+                  setLoggedIn(false); setGarminAccount(null); setGPassword('')
+                  fetch('/api/garmin/logout', { method: 'POST' }).catch(() => {})
+                }}>清除 Garmin 会话</button>
+                <button className="btn btn--ghost btn--sm settings-clear-btn" onClick={() => {
+                  ls.del(SYNC_LOG_KEY)
+                }}>清除同步历史</button>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--tx-4)', marginTop: 0 }}>
+                清除后不影响 Garmin Connect 上的已有数据。
+              </p>
             </div>
           </div>
         </div>
@@ -1144,7 +1173,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Week structure strip */}
+                {/* Week structure strip + weekly stats */}
                 {structEntries.length > 0 && (
                   <div className="week-strip">
                     <span className="week-strip__label">本周</span>
@@ -1161,6 +1190,19 @@ export default function App() {
                         )
                       })}
                     </div>
+                    {(() => {
+                      const runningVms = viewModels.filter(vm => vm.sportType === 'running')
+                      const weekDistM = runningVms.reduce((a, vm) => a + workoutTotals(vm).dist, 0)
+                      const weekDurS  = runningVms.reduce((a, vm) => a + workoutTotals(vm).dur, 0)
+                      if (weekDistM <= 0 && weekDurS <= 0) return null
+                      return (
+                        <div className="week-strip__stats">
+                          {weekDistM > 0 && <span className="week-strip__stat">跑量 {fmtDist(weekDistM)}</span>}
+                          {weekDurS  > 0 && <span className="week-strip__stat">{fmtDur(weekDurS)}</span>}
+                          <span className="week-strip__stat">{runningVms.length} 次跑步</span>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
 
@@ -1491,6 +1533,18 @@ export default function App() {
                     <a href="#" onClick={e => { e.preventDefault(); setShowGarminForm(false) }} style={{ marginLeft: 8 }}>取消</a>
                   </p>
                 )}
+
+                {/* 安全提示 */}
+                <div className="security-notice">
+                  <span className="security-notice__icon">🔒</span>
+                  <div>
+                    <div className="security-notice__title">仅供个人使用</div>
+                    <div className="security-notice__body">
+                      Garmin 登录凭据用于与 Garmin Connect API 交互，登录态保存在<strong>服务器进程内存</strong>中（不写磁盘）。
+                      本工具不存储明文密码。如部署在公共服务器上，<strong>请勿与他人共享同一实例</strong>，以免他人能访问你的 Garmin 账号。
+                    </div>
+                  </div>
+                </div>
                 <label className="field">
                   <span className="field__label">账号区域</span>
                   <select value={gDomain} onChange={e => setGDomain(e.target.value as 'garmin.cn' | 'garmin.com')}>
